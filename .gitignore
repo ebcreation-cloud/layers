@@ -1,0 +1,6 @@
+build/
+Icon/render
+Layers.app/
+Layers.xcodeproj/
+*.xcuserdatad
+.DS_Store

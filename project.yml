@@ -1,0 +1,55 @@
+name: Layers
+options:
+  bundleIdPrefix: com.eunbi
+  deploymentTarget:
+    iOS: "18.0"
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    # 무료 애플 ID 로 서명한다. 팀 ID 는 키체인의 개발 인증서(OU)에서 읽었다.
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: "95ULLZJGWJ"
+
+targets:
+  Layers-iOS:
+    type: application
+    platform: iOS
+    sources: [Sources, Resources]
+    info:
+      path: Support/iOS-Info.plist
+      properties:
+        CFBundleDisplayName: Layers
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSCalendarsFullAccessUsageDescription: Layers shows your Google and Outlook calendars together.
+        NSRemindersFullAccessUsageDescription: Layers places the notes you capture on the day you captured them.
+    settings:
+      base:
+        PRODUCT_NAME: Layers
+        PRODUCT_BUNDLE_IDENTIFIER: com.eunbi.layers
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  Layers-macOS:
+    type: application
+    platform: macOS
+    sources: [Sources, Resources]
+    info:
+      path: Support/macOS-Info.plist
+      properties:
+        CFBundleDisplayName: Layers
+        NSHighResolutionCapable: true
+        NSCalendarsFullAccessUsageDescription: Layers shows your Google and Outlook calendars together.
+        NSRemindersFullAccessUsageDescription: Layers places the notes you capture on the day you captured them.
+    settings:
+      base:
+        PRODUCT_NAME: Layers
+        PRODUCT_BUNDLE_IDENTIFIER: com.eunbi.layers
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

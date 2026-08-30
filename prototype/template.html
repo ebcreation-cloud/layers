@@ -1,0 +1,773 @@
+<title>Layers</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&display=swap">
+<style>
+/* ── 토큰 ────────────────────────────────────────────────
+   바탕 #FEF4E8, 잉크 #283E56, 액센트 #1989AC 와 #970747.
+   개인 일정이 전체의 67% 라 그 색이 세면 화면이 통째로 그 색이 된다. 조용한 회청색으로 낮추고,
+   가장 센 라즈베리는 가장 드물고 급한 것(마감일)에만 쓴다. */
+:root{
+  --ground:#FFFFFF; --surface:#FFFFFF; --sunk:#F3F8FA;
+  --line:#DEE8EC; --line-soft:#EDF3F6;
+  --ink:#283E56; --ink-dim:#6E7F92; --ink-faint:#A9B2BB;
+  --strip:#F5FAFC; --strip-line:#E7F0F4; --today:#1989AC;
+  --s-personal:#93A2B0; --s-coaching:#970747;
+  --s-work:#1989AC; --s-holiday:#C08A2E;
+  --w:#1F8A72; --due:#970747; --tint:15%;
+  --shadow:0 1px 2px rgba(40,62,86,.05), 0 12px 32px -18px rgba(40,62,86,.20);
+  --r:12px;
+  --fs-ui:"IBM Plex Sans KR",-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",system-ui,sans-serif;
+  --fs-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#1C2A38; --surface:#1C2A38; --sunk:#243748;
+    --line:#2B3E50; --line-soft:#233444;
+    --ink:#F4EADC; --ink-dim:#9BABBA; --ink-faint:#65788B;
+    --strip:#21303E; --strip-line:#2D4153; --today:#4FC3E8;
+    --s-personal:#8E9FAF; --s-coaching:#F0669B;
+    --s-work:#4FC3E8; --s-holiday:#E0A94F;
+    --w:#4FC7A4; --due:#F5789F; --tint:26%;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 32px -18px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#1C2A38; --surface:#1C2A38; --sunk:#243748;
+  --line:#2B3E50; --line-soft:#233444;
+  --ink:#F4EADC; --ink-dim:#9BABBA; --ink-faint:#65788B;
+  --strip:#21303E; --strip-line:#2D4153; --today:#4FC3E8;
+  --s-personal:#8E9FAF; --s-coaching:#F0669B;
+  --s-work:#4FC3E8; --s-holiday:#E0A94F;
+  --w:#4FC7A4; --due:#F5789F; --tint:26%;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 32px -18px rgba(0,0,0,.6);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:var(--fs-ui); font-weight:400; font-size:14px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--today);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.wrap{max-width:1360px;margin:0 auto;padding:22px 20px 56px}
+
+/* ── 헤더 ───────────────────────────────────────────── */
+header{display:flex;flex-wrap:wrap;align-items:flex-end;gap:18px 24px;margin-bottom:16px}
+.spacer{flex:1 1 40px}
+
+.navbar{display:flex;align-items:center;gap:6px}
+.navbar .month{
+  font-family:var(--fs-mono);font-size:17px;font-weight:500;letter-spacing:-.01em;
+  min-width:14ch;text-align:center;font-variant-numeric:tabular-nums;
+}
+.nav-btn{
+  width:30px;height:30px;border:1px solid var(--line);border-radius:7px;background:var(--surface);
+  display:grid;place-items:center;color:var(--ink-dim);line-height:1;
+}
+.nav-btn:hover{color:var(--ink);border-color:var(--ink-faint)}
+.today-btn{
+  height:30px;padding:0 11px;border:1px solid var(--line);border-radius:7px;background:var(--surface);
+  font-size:12.5px;color:var(--ink-dim);
+}
+.today-btn:hover{color:var(--ink)}
+
+.seg{display:flex;background:var(--sunk);border-radius:8px;padding:2px;gap:2px}
+.seg button{
+  padding:5px 15px;border-radius:6px;font-size:13px;color:var(--ink-dim);font-weight:500;
+}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.10)}
+
+/* ── 요약 + 범례 ─────────────────────────────────────── */
+.rail{
+  display:flex;flex-wrap:wrap;align-items:center;gap:5px;
+  padding:5px 9px;margin-bottom:10px;
+  background:var(--surface);border:1px solid var(--line);border-radius:8px;
+}
+.rail-group{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.rail-label{
+  font-family:var(--fs-mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-faint);margin-right:2px;
+}
+.src{
+  display:inline-flex;align-items:center;gap:5px;padding:2px 8px 2px 7px;
+  border:1px solid var(--line);border-radius:20px;font-size:11px;color:var(--ink-dim);
+  white-space:nowrap;transition:color .12s,border-color .12s,opacity .12s;
+}
+.src .swatch{width:7px;height:7px;border-radius:50%;background:var(--c);flex:none}
+.src[aria-pressed="true"]{color:var(--ink);border-color:color-mix(in oklab,var(--c) 45%,var(--line))}
+.src[aria-pressed="false"]{opacity:.4}
+.src[aria-pressed="false"] .swatch{background:var(--ink-faint)}
+.src .n{font-family:var(--fs-mono);font-size:9.5px;color:var(--ink-faint)}
+
+.lane-toggle{
+  display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;
+  border:1px solid var(--line);font-size:12.5px;color:var(--ink-dim);
+}
+.lane-toggle[aria-pressed="true"]{background:var(--sunk);color:var(--ink)}
+.lane-toggle[aria-pressed="false"]{opacity:.45}
+
+.stats{display:flex;gap:18px;margin-left:auto}
+.stat{display:flex;flex-direction:column;gap:1px}
+.stat b{font-family:var(--fs-mono);font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat span{font-size:10.5px;color:var(--ink-faint);letter-spacing:.02em}
+
+/* ── 월 뷰 ──────────────────────────────────────────── */
+.dow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;margin:0 1px 2px}
+.dow div{
+  font-family:var(--fs-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-faint);padding:0 0 6px 3px;
+}
+.dow div:first-child,.dow div:last-child{color:color-mix(in oklab,var(--s-holiday) 55%,var(--ink-faint))}
+
+.month-grid{
+  display:flex;flex-direction:column;gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+}
+/* 한 주가 그리드 하나다. 여러 날에 걸친 일정은 이 그리드 안에서 grid-column 으로
+   칼럼을 가로질러 한 줄로 이어진다. 칸마다 따로 그리면 절대 이어 보이지 않는다. */
+.week{
+  display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;
+  background:var(--line);--lane-h:17px;--head-h:25px;--lanes:0;
+}
+.cell{
+  grid-row:1;background:var(--surface);min-height:148px;
+  display:flex;flex-direction:column;align-items:stretch;
+  text-align:left;padding:0;position:relative;width:100%;
+}
+.cell:hover{background:color-mix(in oklab,var(--surface) 93%,var(--today))}
+.cell.out{background:var(--sunk)}
+.cell.out .daynum{color:var(--ink-faint)}
+/* 오늘은 칸을 통째로 반전시킨다. --ink 와 --surface 가 테마마다 서로 반대라
+   밝은 테마에서는 짙은 칸에 밝은 글씨, 어두운 테마에서는 그 반대가 된다. */
+.cell.today{background:var(--ink);color:var(--surface);z-index:2}
+.cell.today:hover{background:color-mix(in oklab,var(--ink) 93%,var(--surface))}
+.cell.today .note-title{color:color-mix(in oklab,var(--surface) 58%,var(--ink))}
+.cell.today .ev .ti{color:var(--surface)}
+.cell.today .ev .t,.cell.today .more{color:color-mix(in oklab,var(--surface) 50%,var(--ink))}
+.cell.today .ev .t{
+  background:color-mix(in oklab,var(--c) 36%,var(--ink));
+  color:color-mix(in oklab,var(--c) 66%,var(--surface));
+}
+.cell.today .strip{background:linear-gradient(to bottom,transparent,color-mix(in oklab,var(--ink) 86%,var(--surface)) 58%)}
+.cell.today .w-chip.done{
+  background:color-mix(in oklab,var(--w) 26%,var(--ink));
+  color:color-mix(in oklab,var(--w) 64%,var(--surface));
+  box-shadow:inset 2px 0 0 color-mix(in oklab,var(--w) 76%,var(--surface));
+}
+.cell.today .w-chip.soft{
+  background:color-mix(in oklab,var(--w) 14%,var(--ink));
+  color:color-mix(in oklab,var(--w) 48%,var(--surface));
+  box-shadow:inset 2px 0 0 color-mix(in oklab,var(--w) 46%,var(--surface));
+}
+.cell.today .w-chip.plan{color:color-mix(in oklab,var(--w) 44%,var(--surface));
+  border-color:color-mix(in oklab,var(--w) 34%,var(--surface))}
+.cell.today .n-chip{color:color-mix(in oklab,var(--surface) 60%,var(--ink))}
+.cell.today .n-chip i{background:color-mix(in oklab,var(--surface) 60%,var(--ink))}
+.cell.today .d-chip{background:color-mix(in oklab,var(--due) 28%,var(--ink));
+  color:color-mix(in oklab,var(--due) 66%,var(--surface))}
+
+.cell-head{display:flex;align-items:center;gap:5px;padding:5px 8px 2px}
+.daynum{
+  font-family:var(--fs-mono);font-size:12px;font-weight:500;color:var(--ink-dim);
+  font-variant-numeric:tabular-nums;
+}
+.cell.today .daynum{
+  background:var(--surface);color:var(--ink);border-radius:50%;
+  width:19px;height:19px;display:grid;place-items:center;font-weight:600;margin:-2px 0;
+}
+.note-title{
+  font-size:10.5px;color:var(--ink-faint);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;flex:1;min-width:0;
+}
+
+/* 여러 날에 걸친 종일 일정. 주 경계에서 잘리고, 잘린 쪽만 모서리를 펴서 이어 보이게 한다. */
+.span{
+  grid-row:1;align-self:start;z-index:3;pointer-events:none;
+  margin-top:calc(var(--head-h) + var(--lane) * var(--lane-h));
+  margin-left:4px;margin-right:4px;height:15px;line-height:15px;
+  border-radius:3px;padding:0 6px 0 8px;font-size:10.5px;font-weight:500;
+  background:color-mix(in oklab,var(--c) 17%,var(--surface));
+  color:color-mix(in oklab,var(--c) 82%,var(--ink));
+  box-shadow:inset 2px 0 0 var(--c);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.span.open-l{margin-left:0;border-top-left-radius:0;border-bottom-left-radius:0;
+  box-shadow:none;padding-left:6px}
+.span.open-r{margin-right:0;border-top-right-radius:0;border-bottom-right-radius:0}
+
+.ev-list{display:flex;flex-direction:column;gap:1px;padding:0 5px 4px;flex:1;min-height:0;overflow:hidden;
+  margin-top:calc(var(--lanes) * var(--lane-h))}
+.bar{
+  font-size:11px;line-height:1.5;padding:1.5px 6px 1.5px 8px;border-radius:4px;
+  color:color-mix(in oklab,var(--c) 72%,var(--ink));
+  background:color-mix(in oklab,var(--c) 15%,var(--surface));
+  box-shadow:inset 2px 0 0 var(--c);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;
+}
+
+.ev{
+  display:flex;align-items:center;gap:5px;padding:1px 3px;border-radius:4px;
+  font-size:11.5px;overflow:hidden;
+}
+/* 시각 칸 자체가 계정 색이다. 점이나 얇은 선은 색 면적이 모자라 세 계정이 안 갈렸다. */
+.ev .t{
+  font-family:var(--fs-mono);font-size:10px;font-weight:500;flex:none;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em;
+  padding:1px 4px;border-radius:3px;line-height:1.4;
+  background:color-mix(in oklab,var(--c) 24%,var(--surface));
+  color:color-mix(in oklab,var(--c) 86%,var(--ink));
+}
+.ev .ti{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.more{font-size:10.5px;color:var(--ink-faint);padding:1px 3px 0 4px}
+
+/* 생활 띠 — 월 그리드의 바닥을 가로지르는 리본.
+   윗변에 선을 그으면 그 선이 행 경계처럼 읽혀서 칩이 위 칸 것인지 아래 칸 것인지
+   헷갈린다. 선 대신 위쪽이 투명한 그라데이션으로 자기 칸에 붙여 놓는다. */
+.strip{
+  margin-top:auto;background:linear-gradient(to bottom,transparent,var(--strip) 58%);
+  display:flex;flex-wrap:wrap;align-items:center;gap:3px 6px;padding:8px 6px 4px;min-height:28px;
+}
+.cell.out .strip{opacity:.5}
+.w-chip{
+  display:inline-flex;align-items:center;gap:4px;max-width:100%;
+  font-size:10.5px;font-weight:500;padding:1px 6px;border-radius:4px;line-height:1.5;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.w-chip.done{
+  background:color-mix(in oklab,var(--w) 18%,var(--surface));
+  color:color-mix(in oklab,var(--w) 78%,var(--ink));
+  box-shadow:inset 2px 0 0 var(--w);padding-left:8px;
+}
+/* 스트레칭·자세교정만 한 날. 같은 초록의 옅은 단계로 두어 한 계열로 읽히게 한다. */
+.w-chip.soft{
+  background:color-mix(in oklab,var(--w) 8%,var(--surface));
+  color:color-mix(in oklab,var(--w) 52%,var(--ink-dim));
+  box-shadow:inset 2px 0 0 color-mix(in oklab,var(--w) 40%,var(--surface));padding-left:8px;
+}
+/* 템플릿이 매일 넣는 계획. 초록기가 남은 점선이라 같은 계열 안에 머문다. */
+.w-chip.plan{
+  color:color-mix(in oklab,var(--w) 38%,var(--ink-faint));
+  border:1px dashed color-mix(in oklab,var(--w) 30%,var(--line));
+}
+/* 마감일은 그날 가장 중요한 줄이라 이름까지 보여준다 */
+.d-chip{
+  flex:0 0 100%;display:flex;align-items:center;gap:4px;min-width:0;
+  background:color-mix(in oklab,var(--due) 13%,var(--surface));color:var(--due);
+  border-radius:4px;padding:1px 6px;font-size:10.5px;font-weight:600;line-height:1.5;
+}
+.d-chip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.d-chip::before{content:"!";font-family:var(--fs-mono);flex:none;opacity:.75}
+.card.due{border-left:2.5px solid var(--due);background:color-mix(in oklab,var(--due) 7%,var(--surface))}
+.card.due .pin-k{color:var(--due);font-weight:600}
+.n-chip{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;color:var(--ink-dim);flex:none}
+.n-chip i{width:5px;height:5px;background:var(--ink-dim);display:block;font-style:normal}
+.n-chip b{font-family:var(--fs-mono);font-weight:500;font-variant-numeric:tabular-nums}
+
+/* ── 일 뷰 ──────────────────────────────────────────── */
+.day{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.day-head{
+  display:flex;align-items:baseline;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line);
+}
+.day-head .d{font-family:var(--fs-mono);font-size:26px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.day-head .dw{font-size:13px;color:var(--ink-dim)}
+.day-head .jt{font-size:12.5px;color:var(--ink-faint);margin-left:auto;text-align:right}
+
+.lane-head{
+  display:grid;grid-template-columns:var(--cols);border-bottom:1px solid var(--line);
+  background:var(--sunk);position:sticky;top:0;z-index:3;
+}
+.lane-head div{
+  font-family:var(--fs-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-faint);padding:7px 10px;border-left:1px solid var(--line-soft);
+}
+.lane-head div:first-child{border-left:0}
+
+.untimed{
+  display:grid;grid-template-columns:var(--cols);border-bottom:1px solid var(--line);
+  background:color-mix(in oklab,var(--sunk) 55%,var(--surface));
+}
+.untimed>div{padding:6px 8px;border-left:1px solid var(--line-soft);display:flex;flex-direction:column;
+  gap:4px;min-width:0;max-height:184px;overflow-y:auto}
+/* 높이가 묶인 flex 컬럼이라 그냥 두면 항목들이 눌려서 라벨만 남고 내용이 잘린다 */
+.untimed>div>*{flex:none}
+/* 완료 Todo 는 하루에 여섯 개씩도 쌓인다. 카드로 세로로 쌓지 말고
+   라벨 하나에 내용을 오른쪽으로 흘린다. */
+.note-row{display:flex;gap:7px;align-items:baseline}
+.note-row .pin-k{flex:none}
+.note-items{display:flex;flex-wrap:wrap;gap:3px 5px;min-width:0}
+.note-item{
+  font-size:11px;line-height:1.45;color:var(--ink);
+  padding:0 6px;border-radius:3px;background:var(--sunk);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;
+}
+.untimed>div:first-child{border-left:0}
+.untimed-tag{
+  font-family:var(--fs-mono);font-size:9.5px;letter-spacing:.08em;color:var(--ink-faint);
+  text-transform:uppercase;padding-left:2px;
+}
+
+.axis{display:grid;grid-template-columns:var(--cols);position:relative}
+.axis>div{border-left:1px solid var(--line-soft);position:relative;min-width:0}
+.axis>div:first-child{border-left:0}
+.hours{position:relative}
+.hour{
+  position:absolute;left:0;right:0;border-top:1px solid var(--line-soft);
+  font-family:var(--fs-mono);font-size:10px;color:var(--ink-faint);padding-left:8px;
+  font-variant-numeric:tabular-nums;
+}
+.gridline{position:absolute;left:0;right:0;border-top:1px solid var(--line-soft);pointer-events:none}
+.now{position:absolute;left:0;right:0;border-top:1.5px solid var(--today);z-index:2}
+.now::before{content:"";position:absolute;left:-3px;top:-4px;width:7px;height:7px;border-radius:50%;background:var(--today)}
+
+.blk{
+  position:absolute;border-radius:5px;padding:3px 7px;overflow:hidden;font-size:11.5px;line-height:1.3;
+  border-left:2.5px solid var(--c);
+  background:color-mix(in oklab,var(--c) var(--tint),var(--surface));
+  color:var(--ink);
+}
+.blk .t{font-family:var(--fs-mono);font-size:9.5px;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+.blk .ti{font-weight:500;overflow:hidden;text-overflow:ellipsis}
+.blk .src-name{font-size:9.5px;color:color-mix(in oklab,var(--c) 70%,var(--ink-dim));
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.blk.tight{padding-top:1px;line-height:1.2}
+.blk.tight .src-name{display:none}
+
+/* 시간축 안에서만 절대 위치다. 기본값을 absolute 로 두었더니 종일 트레이의 카드가
+   기준 부모를 못 찾고 화면 위로 떠올라 종일 막대를 덮었다. */
+.card{
+  border-radius:6px;border:1px solid var(--line);
+  background:var(--surface);padding:5px 8px;font-size:11.5px;line-height:1.35;overflow:hidden;
+}
+.axis .card{position:absolute;left:6px;right:6px}
+.card .pin-k+.t{margin-left:6px}
+.card .t{font-family:var(--fs-mono);font-size:9.5px;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+.card.ticked .pin-k{color:color-mix(in oklab,var(--s-fitness) 70%,var(--ink-faint))}
+.pin-k{
+  font-family:var(--fs-mono);font-size:9px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ink-faint);
+}
+.w-card{padding:9px 10px;display:flex;flex-direction:column;gap:6px;
+  border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.w-tags{display:flex;flex-wrap:wrap;gap:4px}
+.w-tag{
+  font-size:10.5px;font-weight:500;padding:1.5px 7px 1.5px 8px;border-radius:4px;
+  background:color-mix(in oklab,var(--w) 16%,var(--surface));
+  color:color-mix(in oklab,var(--w) 72%,var(--ink));
+  box-shadow:inset 2px 0 0 var(--w);
+}
+.w-tag.ghost{background:color-mix(in oklab,var(--w) 8%,var(--surface));box-shadow:none;
+  border:1px dashed color-mix(in oklab,var(--w) 30%,var(--line));
+  color:color-mix(in oklab,var(--w) 52%,var(--ink-dim))}
+.w-body{font-size:11.5px;color:var(--ink);line-height:1.5}
+.w-meta{font-size:10.5px;color:var(--ink-faint)}
+.checkline{font-size:11px;color:var(--ink-dim);display:flex;gap:5px;align-items:baseline}
+.checkline b{color:var(--ink);font-weight:500}
+.empty{font-size:11.5px;color:var(--ink-faint);padding:10px;font-style:normal}
+
+footer{margin-top:18px;font-size:11.5px;color:var(--ink-faint);line-height:1.7}
+footer b{color:var(--ink-dim);font-weight:500}
+footer code{font-family:var(--fs-mono);font-size:10.5px}
+
+@media (max-width:900px){
+  .wrap{padding:14px 10px 40px}
+  .cell{min-height:112px}
+  /* 폰 폭에서는 시각 칸이 자리를 다 먹어 정작 무슨 일정인지가 안 보인다.
+     시각을 빼고 왼쪽 색선으로 계정을 표시한다. */
+  .ev .t{display:none}
+  .ev{border-left:2.5px solid var(--c);border-radius:0 3px 3px 0;padding-left:5px;gap:0}
+  .ev .ti{font-size:10.5px}
+  .more{padding-left:5px}
+  .stats{width:100%;margin-left:0;order:9}
+}
+@media (max-width:620px){
+  .cell{min-height:88px}
+  .ev .ti,.bar{font-size:10px}
+  .strip{padding:3px 4px;gap:4px}
+}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="navbar">
+    <button class="nav-btn" id="prev" aria-label="Previous month">&#8249;</button>
+    <span class="month" id="mlabel"></span>
+    <button class="nav-btn" id="next" aria-label="Next month">&#8250;</button>
+    <button class="today-btn" id="todayBtn">Today</button>
+  </div>
+  <div class="spacer"></div>
+  <div class="seg" role="group" aria-label="Switch view">
+    <button id="vMonth" aria-pressed="true">Month</button>
+    <button id="vDay" aria-pressed="false">Day</button>
+  </div>
+</header>
+
+<div class="rail" id="srcs"></div>
+
+<div id="view"></div>
+
+<footer id="prov"></footer>
+</div>
+
+<script>
+const DATA = __DATA__;
+
+const SRC_VAR = {personal:"--s-personal",coaching:"--s-coaching",work:"--s-work",holiday:"--s-holiday"};
+const LANES = [["events","Events"],["notes","Notes"]];
+const DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const DOW_FULL = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const MONTHS = ["January","February","March","April","May","June",
+                "July","August","September","October","November","December"];
+/* 운동 태그는 파서가 한국어로 뽑으므로 표시할 때만 영어로 바꾼다 */
+const TAG_EN = {"하체A":"Lower A","하체B":"Lower B","상체당기기":"Upper Pull","상체밀기":"Upper Push",
+  "코어":"Core","필라테스":"Pilates","골프":"Golf","유산소":"Cardio","자세교정":"Posture",
+  "휴식":"Rest","스트레칭":"Stretch","운동":"Workout"};
+const tagEn = t => TAG_EN[t] || t;
+
+const state = {
+  cursor: new Date(DATA.today + "T00:00:00"),
+  selected: DATA.today,
+  view: "month",
+  offSrc: new Set(),
+  offLane: new Set(),
+};
+
+const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const parse = s => new Date(s + "T00:00:00");
+const addDays = (d,n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+const mins = t => { const [h,m] = t.split(":").map(Number); return h*60+m; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+const cvar = src => `var(${SRC_VAR[src]})`;
+/* 운동과 음식은 노트 레인에 딸린다 */
+const laneOn = k => !state.offLane.has(k === "workout" ? "notes" : k);
+
+/* 같은 날 같은 시각에 제목이 뜻있는 단어를 공유하면, 같은 일정을 두 계정에 넣어둔 것으로 본다.
+   8/15 10:30 FS8 수업이 코칭 계정엔 "FS8 class", 개인 계정엔 "FS8 Siglap - FS8 ReformX" 로
+   들어와 있었다. 제목이 달라서 글자 비교로는 안 잡힌다.
+   "payment" "생일" 처럼 여러 일정에 두루 쓰이는 말은 근거로 치지 않는다. 같은 날 결제가
+   두 건 있을 때 그게 하나로 합쳐지면 안 되니까. */
+const GENERIC = new Set(["payment","birthday","생일","송금","lunch","dinner","breakfast",
+  "coffee","call","meeting","class","holiday","observed","day","off","with","and","the","for"]);
+const keyWords = t => new Set((String(t).toLowerCase().match(/[a-z0-9가-힣]{3,}/g) || [])
+  .filter(x => !GENERIC.has(x)));
+
+const EVENTS = (() => {
+  const kept = [], slots = new Map();
+  for (const e of DATA.events) {
+    const slot = e.date + "|" + (e.time || "");
+    const here = slots.get(slot) || [];
+    const mine = keyWords(e.title);
+    const twin = here.find(o => [...keyWords(o.title)].some(w => mine.has(w)));
+    if (twin) {
+      /* 지우기만 하지 않고 어느 캘린더에도 있었는지 남긴다. 더 구체적인 제목을 쓴다. */
+      twin.also = (twin.also || []).concat(e.cal);
+      if (e.title.length > twin.title.length) twin.title = e.title;
+      continue;
+    }
+    const copy = {...e};
+    here.push(copy); slots.set(slot, here); kept.push(copy);
+  }
+  return kept;
+})();
+
+/* 관통 막대로 그릴 것: 종일 일정, 그리고 하루를 넘기는 시각 일정.
+   "밤 11시 Yobo in Vegas" 처럼 시각이 있어도 며칠 가는 일정이 실제로 있어서,
+   기준은 종일 여부가 아니라 하루를 넘기느냐다. 칸마다 쪼개면 절대 이어 보이지 않는다. */
+const isSpan = e => !e.time || (e.end && e.end !== e.date);
+
+const timedByDate = {};
+for (const e of EVENTS) if (!isSpan(e)) (timedByDate[e.date] ||= []).push(e);
+for (const k in timedByDate) timedByDate[k].sort((a,b) => a.time.localeCompare(b.time));
+
+const spans = EVENTS.filter(isSpan)
+  .map(e => ({e, s: parse(e.date), t: parse(e.end || e.date)}));
+
+const shown = e => !state.offSrc.has(e.source);
+const dayDiff = (a,b) => Math.round((a - b) / 864e5);
+const spansOn = k => { const d = parse(k); return spans.filter(x => shown(x.e) && x.s <= d && d <= x.t); };
+
+/* ── 범례 / 레인 토글 ─────────────────────────────── */
+function renderRail(){
+  const counts = {};
+  for (const e of EVENTS) counts[e.source] = (counts[e.source]||0)+1;
+  document.getElementById("srcs").innerHTML = Object.entries(DATA.sources).map(([k,s]) =>
+    `<button class="src" data-src="${k}" style="--c:var(${SRC_VAR[k]})" aria-pressed="${!state.offSrc.has(k)}"
+       title="${esc(s.kind)} · ${esc(s.account)}"><span class="swatch"></span>${esc(s.label)}<span class="n">${counts[k]||0}</span></button>`
+  ).join("");
+}
+
+function renderStats(){
+  const y = state.cursor.getFullYear(), m = state.cursor.getMonth();
+  const inM = k => { const d = parse(k); return d.getFullYear()===y && d.getMonth()===m; };
+  const ev = EVENTS.filter(e => inM(e.date) && shown(e)).length;
+  const w  = Object.entries(DATA.workouts).filter(([k,v]) => inM(k) && v.did_main).length;
+  const wAny = Object.entries(DATA.workouts).filter(([k,v]) => inM(k) && v.did_any).length;
+  const n  = Object.entries(DATA.notes).filter(([k]) => inM(k)).reduce((a,[,v]) => a+v.length, 0);
+  document.getElementById("stats").innerHTML = [
+    [ev,"Events"],[`${w}<span style="color:var(--ink-faint);font-size:11px">/${wAny}</span>`,"Workouts logged/active"],
+    [n,"Notes"]
+  ].map(([v,l]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
+}
+
+/* ── 월 뷰 ────────────────────────────────────────── */
+function monthView(){
+  const y = state.cursor.getFullYear(), m = state.cursor.getMonth();
+  const first = new Date(y, m, 1);
+  const start = addDays(first, -first.getDay());
+  const weeks = Math.ceil((first.getDay() + new Date(y, m+1, 0).getDate()) / 7);
+
+  let html = `<div class="dow">${DOW.map(d => `<div>${d}</div>`).join("")}</div><div class="month-grid">`;
+
+  for (let wi = 0; wi < weeks; wi++) {
+    const w0 = addDays(start, wi*7), w6 = addDays(start, wi*7 + 6);
+
+    /* 이 주에 걸치는 종일 일정을 주 경계에서 잘라 조각으로 만들고, 겹치면 줄을 나눈다 */
+    let segs = [], nLanes = 0;
+    if (laneOn("events")) {
+      segs = spans.filter(x => shown(x.e) && x.t >= w0 && x.s <= w6).map(x => ({
+        e: x.e,
+        sc: Math.max(0, dayDiff(x.s, w0)),
+        ec: Math.min(6, dayDiff(x.t, w0)),
+        openL: x.s < w0, openR: x.t > w6,
+      }));
+      segs.sort((a,b) => a.sc - b.sc || (b.ec - b.sc) - (a.ec - a.sc));
+      const lanes = [];
+      for (const g of segs) {
+        let li = lanes.findIndex(rows => rows.every(r => g.sc > r.ec || g.ec < r.sc));
+        if (li < 0) { lanes.push([g]); li = lanes.length - 1; } else lanes[li].push(g);
+        g.lane = li;
+      }
+      nLanes = lanes.length;
+    }
+
+    let cells = "";
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(w0, i), k = iso(d);
+      const out = d.getMonth() !== m;
+      const timed = (timedByDate[k] || []).filter(shown);
+      const w = DATA.workouts[k], notes = DATA.notes[k] || [];
+
+      const cap = Math.max(1, 4 - nLanes);
+      let body = "";
+      if (laneOn("events")) {
+        body += timed.slice(0, cap).map(e =>
+          `<div class="ev" style="--c:${cvar(e.source)}"><span class="t">${e.time}</span><span class="ti">${esc(e.title)}</span></div>`).join("");
+        if (timed.length > cap) body += `<div class="more">+${timed.length - cap} more</div>`;
+      }
+
+      let strip = "";
+      if (laneOn("workout") && w) {
+        /* 두 가지만 구분한다: 실제로 한 것(채운 칩) / 템플릿이 넣어둔 계획(흐린 점선) */
+        const t = workoutChip(w);
+        if (t) strip += `<span class="w-chip ${t.level}">${esc(t.text.map(tagEn).join(" · "))}</span>`;
+      }
+      if (laneOn("notes")) {
+        const dues = notes.filter(n => n.kind === "due");
+        strip = dues.map(n => `<span class="d-chip"><span class="nm">${esc(n.text)}</span></span>`).join("") + strip;
+        const rest = notes.length - dues.length;
+        if (rest) strip += `<span class="n-chip"><i></i><b>${rest}</b></span>`;
+      }
+
+      const title = DATA.workouts[k]?.note_title || "";
+      cells += `<button class="cell${out ? " out" : ""}${k === DATA.today ? " today" : ""}" data-d="${k}" style="grid-column:${i+1}">
+        <div class="cell-head"><span class="daynum">${d.getDate()}</span>${title ? `<span class="note-title">${esc(title)}</span>` : ""}</div>
+        <div class="ev-list">${body}</div>
+        <div class="strip">${strip}</div></button>`;
+    }
+
+    const bars = segs.map(g =>
+      `<div class="span${g.openL ? " open-l" : ""}${g.openR ? " open-r" : ""}" style="--c:${cvar(g.e.source)};--lane:${g.lane};grid-column:${g.sc+1}/span ${g.ec-g.sc+1}">${g.openL || !g.e.time ? "" : g.e.time + " "}${esc(g.e.title)}</div>`).join("");
+
+    html += `<div class="week" style="--lanes:${nLanes}">${cells}${bars}</div>`;
+  }
+  return html + "</div>";
+}
+
+/* ── 일 뷰 ────────────────────────────────────────── */
+const H0 = 6, H1 = 24, PX = 44;
+const yFor = t => (mins(t)/60 - H0) * PX;
+
+/* 종료 시각이 있으면 그대로, 없으면 1시간으로 본다. 자정을 넘기면 그날 끝까지 */
+function span(e){
+  const s = mins(e.time);
+  if (!e.endTime) return 60;
+  const d = mins(e.endTime) - s;
+  return d <= 0 ? (H1*60 - s) : Math.max(24, d);
+}
+
+function packed(evs){
+  /* 겹치는 일정을 옆으로 나눠 놓는다 */
+  const items = evs.map(e => ({e, s: mins(e.time), t: mins(e.time)+span(e)}));
+  items.sort((a,b) => a.s-b.s);
+  const cols = [];
+  for (const it of items) {
+    let c = cols.findIndex(col => col[col.length-1].t <= it.s);
+    if (c < 0) { cols.push([it]); c = cols.length-1; } else cols[c].push(it);
+    it.col = c;
+  }
+  return items.map(it => ({...it, n: cols.length}));
+}
+
+function dayView(){
+  const k = state.selected, d = parse(k);
+  const timed = (timedByDate[k] || []).filter(shown);
+  const allday = spansOn(k).map(x => x.e);
+  const w = DATA.workouts[k], notes = DATA.notes[k] || [];
+
+  const showEv = laneOn("events");
+  const showN = laneOn("notes"), showW = laneOn("workout");
+  const showNote = showN || showW;   /* 노트 열은 노트와 운동을 함께 담는다 */
+  if (!showEv && !showNote) return `<div class="day"><div class="empty">Turn on at least one lane.</div></div>`;
+
+  const heads = [...(showEv ? ["Events"] : []), ...(showNote ? ["Notes"] : [])];
+  const cols = `56px ${heads.map(() => "minmax(0,1fr)").join(" ")}`;
+  const H = (H1 - H0) * PX;
+
+  const notesTimed = showN ? notes.filter(n => n.time) : [];
+  const notesFree  = showN ? notes.filter(n => !n.time) : [];
+
+  let head = `<div class="lane-head" style="--cols:${cols}"><div>Time</div>${heads.map(l => `<div>${l}</div>`).join("")}</div>`;
+
+  /* 시각이 없는 것들: 종일 일정 / 운동 기록 / 시간 없는 노트 */
+  let tray = `<div class="untimed" style="--cols:${cols}"><div><span class="untimed-tag">All day</span></div>`;
+  if (showEv) tray += `<div>${allday.map(e =>
+    `<div class="bar" style="--c:${cvar(e.source)}">${e.time ? e.time + " " : ""}${esc(e.title)}</div>`).join("") || `<span class="untimed-tag">—</span>`}</div>`;
+  if (showNote) {
+    const parts = [];
+    if (showW && w) parts.push(workoutCard(w));
+    /* 마감일은 그날 가장 중요한 줄이라 카드 한 장씩 그대로 남긴다 */
+    for (const n of notesFree.filter(n => n.kind === "due"))
+      parts.push(`<div class="card due"><span class="pin-k">${esc(n.label)}</span><div>${esc(n.text)}</div></div>`);
+    /* 나머지는 라벨 하나에 묶어 내용을 옆으로 흘린다 */
+    const groups = new Map();
+    for (const n of notesFree.filter(n => n.kind !== "due")) {
+      if (!groups.has(n.label)) groups.set(n.label, []);
+      groups.get(n.label).push(n);
+    }
+    for (const [label, list] of groups)
+      parts.push(`<div class="note-row"><span class="pin-k">${esc(label)}</span>` +
+        `<span class="note-items">${list.map(n => `<span class="note-item">${esc(n.text)}</span>`).join("")}</span></div>`);
+    tray += `<div>${parts.join("") || `<span class="untimed-tag">—</span>`}</div>`;
+  }
+  tray += `</div>`;
+
+  let axis = `<div class="axis" style="--cols:${cols};min-height:${H}px"><div class="hours">`;
+  for (let h = H0; h <= H1; h++)
+    axis += `<div class="hour" style="top:${(h-H0)*PX}px">${h === H1 ? "" : String(h).padStart(2,"0") + ":00"}</div>`;
+  axis += `</div>`;
+
+  let lines = "";
+  for (let h = H0+1; h < H1; h++) lines += `<div class="gridline" style="top:${(h-H0)*PX}px"></div>`;
+
+  if (showEv) {
+    axis += `<div>${lines}${packed(timed).map(({e,col,n}) => {
+      const wpc = 100/n, h = Math.max(22, span(e)/60*PX - 3);
+      return `<div class="blk${h < 46 ? " tight" : ""}" style="--c:${cvar(e.source)};top:${yFor(e.time)}px;height:${h}px;left:calc(${col*wpc}% + 5px);width:calc(${wpc}% - 9px)">
+        <div class="t">${e.time}${e.endTime ? "&ndash;" + e.endTime : ""}</div><div class="ti">${esc(e.title)}</div>
+        <div class="src-name">${esc(e.cal)}${e.also ? " +" + e.also.length : ""}</div></div>`;
+    }).join("")}</div>`;
+  }
+
+  if (showNote) {
+    axis += `<div class="stackable">${lines}${notesTimed.map(n =>
+      `<div class="card${n.done ? " ticked" : ""}" data-top="${yFor(n.time)}" style="top:${yFor(n.time)}px">` +
+      `<span class="pin-k">${n.done ? "&#10003; " : ""}${esc(n.label)}</span>` +
+      `<span class="t">${n.time}</span><div>${esc(n.text)}</div></div>`).join("")}</div>`;
+  }
+  axis += `</div>`;
+
+  const jt = DATA.workouts[k]?.note_title;
+  return `<div class="day">
+    <div class="day-head"><span class="d">${d.getMonth()+1}.${String(d.getDate()).padStart(2,"0")}</span>
+      <span class="dw">${DOW_FULL[d.getDay()]}</span>
+      ${jt ? `<span class="jt">${esc(jt)}</span>` : ""}</div>
+    ${head}${tray}${axis}</div>`;
+}
+
+/* 같은 시간대에 노트와 음식이 겹치면 실제 높이를 재서 아래로 밀어낸다 */
+function resolveStack(){
+  document.querySelectorAll(".stackable").forEach(col => {
+    let bottom = -Infinity;
+    col.querySelectorAll(".card").forEach(c => {
+      const top = Math.max(+c.dataset.top, bottom + 4);
+      c.style.top = top + "px";
+      bottom = top + c.offsetHeight;
+    });
+  });
+}
+
+/* 운동 칩은 두 가지 상태뿐이다.
+   채운 칩은 기록 줄에 실제로 적은 날. 스트레칭·자세교정 체크만 있는 날까지 채우면
+   8일이 딸려 들어와 본운동 11일이 묻혀서, 그건 흐린 쪽에 두되 이름은 살려둔다. */
+function workoutChip(w){
+  /* 초록 한 계열의 세 단계. 기록 줄을 쓴 날이 가장 진하고, 스트레칭만 한 날은
+     옅은 초록, 템플릿이 넣어둔 계획은 초록기가 남은 점선이다. */
+  if (w.did_main) return {level:"done", text:w.actual_tags.length ? w.actual_tags : ["운동"]};
+  if (w.stretch_done.length) return {level:"soft", text:["스트레칭"]};
+  if (w.posture_done.length) return {level:"soft", text:["자세교정"]};
+  if (w.planned_tags.length) return {level:"plan", text:w.planned_tags};
+  return null;
+}
+
+function workoutCard(w){
+  const chip = workoutChip(w);
+  if (!chip) return "";
+  const tags = chip.text, solid = chip.level === "done";
+  const checks = [];
+  if (w.posture_done.length) checks.push(`Posture ${w.posture_done.length}`);
+  if (w.stretch_done.length) checks.push(`Stretch ${w.stretch_done.length}`);
+  return `<div class="w-card">
+    <div class="w-tags">${tags.map(t => `<span class="w-tag${solid ? "" : " ghost"}">${esc(tagEn(t))}</span>`).join("")}</div>
+    ${w.actual ? `<div class="w-body">${esc(w.actual)}</div>` : ""}
+    ${checks.length ? `<div class="checkline"><b>${checks.join(" · ")}</b></div>` : ""}
+    ${w.recovery ? `<div class="w-meta">Recovery ${w.recovery}%</div>` : ""}
+  </div>`;
+}
+
+/* ── 렌더 / 이벤트 ────────────────────────────────── */
+function render(){
+  const y = state.cursor.getFullYear();
+  document.getElementById("mlabel").textContent = `${MONTHS[state.cursor.getMonth()]} ${y}`;
+  document.getElementById("vMonth").setAttribute("aria-pressed", state.view === "month");
+  document.getElementById("vDay").setAttribute("aria-pressed", state.view === "day");
+  renderRail();
+  document.getElementById("view").innerHTML = state.view === "month" ? monthView() : dayView();
+  if (state.view === "day") resolveStack();
+}
+
+document.addEventListener("click", e => {
+  const cell = e.target.closest(".cell");
+  if (cell) { state.selected = cell.dataset.d; state.view = "day"; state.cursor = parse(cell.dataset.d); return render(); }
+  const src = e.target.closest(".src");
+  if (src) { const k = src.dataset.src; state.offSrc.has(k) ? state.offSrc.delete(k) : state.offSrc.add(k); return render(); }
+  const lane = e.target.closest(".lane-toggle");
+  if (lane) { const k = lane.dataset.lane; state.offLane.has(k) ? state.offLane.delete(k) : state.offLane.add(k); return render(); }
+});
+
+const step = n => {
+  if (state.view === "day") { state.selected = iso(addDays(parse(state.selected), n)); state.cursor = parse(state.selected); }
+  else state.cursor = new Date(state.cursor.getFullYear(), state.cursor.getMonth()+n, 1);
+  render();
+};
+document.getElementById("prev").onclick = () => step(-1);
+document.getElementById("next").onclick = () => step(1);
+document.getElementById("todayBtn").onclick = () => { state.selected = DATA.today; state.cursor = parse(DATA.today); render(); };
+document.getElementById("vMonth").onclick = () => { state.view = "month"; render(); };
+document.getElementById("vDay").onclick = () => { state.view = "day"; render(); };
+document.addEventListener("keydown", e => {
+  if (e.target.matches("input,textarea")) return;
+  if (e.key === "ArrowLeft") step(-1);
+  else if (e.key === "ArrowRight") step(1);
+  else if (e.key === "m") { state.view = "month"; render(); }
+  else if (e.key === "d") { state.view = "day"; render(); }
+});
+
+document.getElementById("prov").innerHTML =
+  `Events and reminders come from EventKit across four connected accounts; workouts and notes are parsed from the Obsidian journal. ` +
+  `Duplicate public holidays are dropped, and account colours are assigned here rather than taken from Google, where two of the accounts share the same one.<br>` +
+  `A filled workout chip means you wrote on the record line. A faint dashed one means you did not: the journal template injects a plan every day, so a plan is background, not information.`;
+
+render();
+</script>

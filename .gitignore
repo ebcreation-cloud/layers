@@ -4,3 +4,8 @@ Layers.app/
 Layers.xcodeproj/
 *.xcuserdatad
 .DS_Store
+
+# Personal data: extracted calendars, reminders and the rendered page that inlines them
+prototype/*.json
+prototype/calendar.html
+prototype/bridge/CalendarBridge.app/

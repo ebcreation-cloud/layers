@@ -1,13 +1,19 @@
 import SwiftUI
 
-private let laneH: CGFloat = 17
+// One event line. An all-day bar and a timed row share these, so within a cell every
+// event has the same height, the same font, the same left edge and the same gap to the
+// next one. Two sets of numbers made a week read as two lists that happened to touch.
+private let evH: CGFloat = isPhone ? 13 : 16
+private let evFont: CGFloat = isPhone ? 9.5 : 10.5
+private let laneH: CGFloat = evH + 1
+/// Gap from the cell edge to an event, all-day bar or timed row alike.
+private let evInset: CGFloat = 3
 private let headH: CGFloat = 24
 // Week height follows the window. Pinning it meant a six-week month overflowed a 13"
 // screen and the last row hid behind the Dock. Every week still shares one height,
 // because they all shrink together.
 private let rowMinH: CGFloat = 78
 private let stripH: CGFloat = 26
-private let evH: CGFloat = 16
 
 struct MonthView: View {
     @ObservedObject var data: CalendarData
@@ -67,14 +73,16 @@ private struct WeekRow: View {
     @Binding var selected: Date?
     @State private var size: CGSize = .zero
 
-    /// Width of one cell. Six 1pt gaps sit between the seven cells.
-    private var colW: CGFloat { max(0, (size.width - 6) / 7) }
+    /// Width of one cell. The cells sit flush against each other: the grid keeps its
+    /// week rules and drops the day ones, so the month reads as ruled paper rather than
+    /// as a table. Nothing separates Tuesday from Wednesday but the day number.
+    private var colW: CGFloat { max(0, size.width / 7) }
 
     var body: some View {
         let segs = data.segments(weekStart: days[0])
         let lanes = (segs.map(\.lane).max() ?? -1) + 1
         ZStack(alignment: .topLeading) {
-            HStack(spacing: 1) {
+            HStack(spacing: 0) {
                 ForEach(days, id: \.self) { d in
                     DayCell(data: data, day: d, month: month, lanes: lanes,
                             rowHeight: size.height, selected: $selected)
@@ -88,11 +96,11 @@ private struct WeekRow: View {
             if size.width > 0 {
                 ForEach(segs) { seg in
                     let span = CGFloat(seg.endCol - seg.startCol + 1)
-                    let lead: CGFloat = seg.openLeft ? 0 : 4
-                    let trail: CGFloat = seg.openRight ? 0 : 4
+                    let lead: CGFloat = seg.openLeft ? 0 : evInset
+                    let trail: CGFloat = seg.openRight ? 0 : evInset
                     SpanBar(seg: seg)
-                        .frame(width: max(0, (colW + 1) * span - 1 - lead - trail), height: 15)
-                        .offset(x: (colW + 1) * CGFloat(seg.startCol) + lead,
+                        .frame(width: max(0, colW * span - lead - trail), height: evH)
+                        .offset(x: colW * CGFloat(seg.startCol) + lead,
                                 y: headH + CGFloat(seg.lane) * laneH)
                         .allowsHitTesting(false)
                 }
@@ -103,23 +111,28 @@ private struct WeekRow: View {
     }
 }
 
+/// The all-day bar, drawn as an outline rather than a fill.
+///
+/// A pale tinted pill filling the cell width is what every calendar draws, so the shape
+/// itself had become the cliche and no palette could get out from under it. An outline
+/// spends almost no ink, and three stacked on one day stay three lines instead of
+/// becoming a grey slab.
+///
+/// It carries no account. All-day events are holidays, birthdays and payments, and
+/// which account they arrived in is the one thing nobody looks up.
 private struct SpanBar: View {
     let seg: CalendarData.Segment
     var body: some View {
-        let c = seg.item.source.color
         HStack(spacing: 0) {
-            if !seg.openLeft { Rectangle().fill(c).frame(width: 2) }
-            Text(seg.openLeft || seg.item.isAllDay ? seg.item.title : "\(Fmt.hm(seg.item.start)) \(seg.item.title)")
-                .font(.ui(10.5, .medium))
-                .foregroundStyle(c.mix(with: Theme.ink, by: 0.2))
+            Text(seg.openLeft || seg.item.isAllDay ? seg.item.title
+                 : "\(Fmt.hm(seg.item.start)) \(seg.item.title)")
+                .font(.mono(evFont - 1.5)).tracking(0.7).textCase(.uppercase)
+                .foregroundStyle(Theme.ink)
                 .lineLimit(1).truncationMode(.tail)
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 5)
             Spacer(minLength: 0)
         }
-        .background(c.opacity(0.17))
-        .clipShape(.rect(topLeadingRadius: seg.openLeft ? 0 : 3, bottomLeadingRadius: seg.openLeft ? 0 : 3,
-                         bottomTrailingRadius: seg.openRight ? 0 : 3, topTrailingRadius: seg.openRight ? 0 : 3))
-
+        .overlay(OutlineBox(openLeft: seg.openLeft, openRight: seg.openRight))
     }
 }
 
@@ -139,77 +152,59 @@ private struct DayCell: View {
     var body: some View {
         let timed = data.timed(on: day)
         // Show as many events as the space left by bars and the strip allows
-        let lineH: CGFloat = isPhone ? 11 : evH
         let strip: CGFloat = isPhone ? 15 : stripH
-        let cap = max(1, Int((rowHeight - headH - CGFloat(lanes) * laneH - strip) / lineH))
+        let cap = max(1, Int((rowHeight - headH - CGFloat(lanes) * laneH - strip) / laneH))
         let w = data.workouts[cal.startOfDay(for: day)]
         let notes = data.notes[cal.startOfDay(for: day)] ?? []
         let jnotes = data.journalNotes[cal.startOfDay(for: day)] ?? []
         let dues = notes.filter(\.isDue)
 
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 5) {
+                // Today is the one place colour appears in the month. The cell is not
+                // inverted any more: a whole inverted cell is a large field of something,
+                // and a page that has exactly one colour on it does not need the area.
                 Text("\(cal.component(.day, from: day))")
-                    .font(.mono(12, isToday ? .semibold : .medium))
-                    // On an inverted cell the disc must be light and the digits dark, or nothing shows
-                    .foregroundStyle(isToday ? Theme.ink : (outside ? Theme.inkFaint : Theme.inkDim))
-                    .frame(width: isToday ? 19 : nil, height: isToday ? 19 : nil)
-                    .background { if isToday { Circle().fill(Theme.surface) } }
+                    .font(.mono(12, .medium))
+                    .foregroundStyle(isToday ? .white : (outside ? Theme.inkFaint : Theme.inkDim))
+                    .padding(.horizontal, isToday ? 5 : 0).padding(.vertical, isToday ? 1 : 0)
+                    .background { if isToday { RoundedRectangle(cornerRadius: 3).fill(Theme.accent) } }
                 if let t = w?.noteTitle, !t.isEmpty {
-                    Text(t).font(.ui(10.5))
-                        .foregroundStyle(isToday ? Theme.surface.opacity(0.6) : Theme.inkFaint)
-                        .lineLimit(1)
+                    Text(t).font(.ui(10.5)).foregroundStyle(Theme.inkFaint).lineLimit(1)
                 }
             }
             .padding(.horizontal, 8).padding(.top, 5)
+            // Fixed, because the bars are placed at headH. A head that grew on the today
+            // cell left the bars sitting across the first row of events.
+            .frame(height: headH, alignment: .top)
 
-            if isPhone {
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(timed.prefix(max(1, cap))) { e in
-                        HStack(spacing: 2) {
-                            Rectangle().fill(e.source.color).frame(width: 2)
-                            Text(e.title)
-                                .font(.ui(8.5))
-                                .foregroundStyle(isToday ? Theme.surface : Theme.ink)
-                                .lineLimit(1).truncationMode(.tail)
-                            Spacer(minLength: 0)
-                        }
-                        .frame(height: 11)
-                    }
-                    if timed.count > max(1, cap) {
-                        Text("+\(timed.count - max(1, cap))")
-                            .font(.mono(7.5))
-                            .foregroundStyle(isToday ? Theme.surface.opacity(0.5) : Theme.inkFaint)
-                    }
-                    Spacer(minLength: 0)
+            // The gap is the lane pitch less the line height, the same gap the bars
+            // above leave between themselves, so the whole cell keeps one rhythm.
+            VStack(alignment: .leading, spacing: laneH - evH) {
+                ForEach(timed.prefix(cap)) { e in
+                    if isPhone { PhoneEventRow(item: e) } else { EventRow(item: e) }
                 }
-                .padding(.top, CGFloat(lanes) * laneH + 1)
-                .padding(.horizontal, 3)
-            } else {
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(timed.prefix(cap)) { e in EventRow(item: e, inverted: isToday) }
-                    if timed.count > cap {
-                        Text("+\(timed.count - cap) more").font(.ui(10.5))
-                            .foregroundStyle(isToday ? Theme.surface.opacity(0.5) : Theme.inkFaint)
-                            .padding(.leading, 4)
-                    }
+                if timed.count > cap {
+                    Text(isPhone ? "+\(timed.count - cap)" : "+\(timed.count - cap) more")
+                        .font(isPhone ? Font.mono(9) : Font.ui(10.5))
+                        .foregroundStyle(Theme.inkFaint)
                 }
-                .padding(.top, CGFloat(lanes) * laneH)
-                .padding(.horizontal, 5)
             }
+            .padding(.top, CGFloat(lanes) * laneH)
+            // The bars are inset this far from the cell edge; the rows share it.
+            .padding(.horizontal, evInset)
 
             Spacer(minLength: 0)
 
             // The life strip. A rule along its top reads as a row boundary, so it fades
             // in from transparent instead.
             HStack(spacing: 5) {
-                if let chip = w?.chip { WorkoutChip(chip: chip, inverted: isToday) }
+                if let tags = w?.chip { WorkoutChip(tags: tags) }
                 let rest = notes.count - dues.count + jnotes.count
                 if rest > 0 {
                     HStack(spacing: 3) {
-                        Rectangle().fill(isToday ? Theme.surface.opacity(0.6) : Theme.inkDim).frame(width: 5, height: 5)
-                        Text("\(rest)").font(.mono(10.5))
-                            .foregroundStyle(isToday ? Theme.surface.opacity(0.6) : Theme.inkDim)
+                        Rectangle().fill(Theme.inkDim).frame(width: 5, height: 5)
+                        Text("\(rest)").font(.mono(10.5)).foregroundStyle(Theme.inkDim)
                     }
                 }
                 Spacer(minLength: 0)
@@ -217,69 +212,71 @@ private struct DayCell: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: isPhone ? 15 : stripH)
             .padding(.horizontal, 6)
-            .background(LinearGradient(colors: [.clear, isToday ? Theme.ink.opacity(0.55) : Theme.strip],
+            .background(LinearGradient(colors: [.clear, Theme.strip],
                                        startPoint: .top, endPoint: .bottom))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(isToday ? Theme.ink : (outside ? Theme.sunk : Theme.surface))
-        // Make it feel clickable. The inverted today cell lifts toward light instead.
-        .overlay((isToday ? Theme.surface : Theme.today).opacity(hover ? 0.07 : 0))
+        .background(outside ? Theme.sunk : Theme.surface)
+        // A 2pt rule across the whole cell, so today is found while scanning a week
+        // rather than only when the eye lands on the number.
+        .overlay(alignment: .top) {
+            if isToday { Rectangle().fill(Theme.accent).frame(height: 2) }
+        }
+        // Make it feel clickable.
+        .overlay(Theme.ink.opacity(hover ? 0.05 : 0))
         .contentShape(Rectangle())
         .onHover { hover = $0 }
         .onTapGesture { selected = day }
     }
 }
 
-/// The tinted box around the time carries the account colour. A dot or a thin rule
-/// gave too little colour area to tell three accounts apart.
+/// The time carries the account, in ink rather than in hue. See `Source.Chip`.
 private struct EventRow: View {
     let item: Item
-    let inverted: Bool
     var body: some View {
         HStack(spacing: 5) {
-            Text(Fmt.hm(item.start))
-                .font(.mono(10, .medium))
-                .foregroundStyle(item.source.color.mix(with: inverted ? Theme.surface : Theme.ink, by: 0.14))
-                .padding(.horizontal, 4)
-                .frame(height: 14)
-                .background(item.source.color.opacity(inverted ? 0.36 : 0.24))
-                .clipShape(RoundedRectangle(cornerRadius: 3))
+            TimeChip(text: Fmt.hm(item.start), source: item.source, size: 9.5)
             Text(item.title)
-                .font(.ui(11.5))
-                .foregroundStyle(inverted ? Theme.surface : Theme.ink)
+                .font(.ui(evFont)).foregroundStyle(Theme.ink)
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 3)
         .frame(height: evH)
     }
 }
 
-/// Three steps of one green. The solid fill means a record line was actually written.
-private struct WorkoutChip: View {
-    let chip: (level: Workout.Level, tags: [String])
-    let inverted: Bool
-
+/// A phone cell is about 55pt wide — too narrow to carry a time and a title side by
+/// side, and the title is the half worth keeping. So the account's density moves onto
+/// the title itself: the same four states, on the only thing there is room for.
+private struct PhoneEventRow: View {
+    let item: Item
     var body: some View {
-        let text = chip.tags.map(Workout.label).joined(separator: " · ")
-        let w = Theme.workout
-        HStack(spacing: 0) {
-            if chip.level != .plan { Rectangle().fill(w.opacity(chip.level == .done ? 1 : 0.45)).frame(width: 2) }
-            Text(text).font(.ui(10.5, .medium))
-                .foregroundStyle(chip.level == .plan ? w.opacity(0.6)
-                                 : w.mix(with: inverted ? Theme.surface : Theme.ink, by: 0.22))
-                .lineLimit(1).fixedSize().padding(.horizontal, 6)
-        }
-        .frame(height: 15)
-        .background(chip.level == .plan ? Color.clear : w.opacity(chip.level == .done ? 0.18 : 0.08))
-        .overlay {
-            if chip.level == .plan {
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [2.5, 2.5]))
-                    .foregroundStyle(w.opacity(0.35))
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        Text(item.title)
+            .font(.ui(evFont))
+            .foregroundStyle(item.source.chip == .solid ? Theme.surface : Theme.ink)
+            .lineLimit(1).truncationMode(.tail)
+            .density(item.source)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: evH)
+    }
+}
+
+/// What was actually done that day. Records only — see `Workout.chip`.
+///
+/// Rounded, where the all-day bar above it is square. Both are outlined boxes and in a
+/// cell with no all-day event the workout would otherwise read as one; an event is a
+/// span and has ends, a record is a single fact and has none, so the silhouette says
+/// which is which without depending on where in the cell it sits.
+private struct WorkoutChip: View {
+    let tags: [String]
+    var body: some View {
+        Text(tags.map(Workout.label).joined(separator: " · "))
+            .font(.mono(evFont - 1.5)).tracking(0.5).textCase(.uppercase)
+            .foregroundStyle(Theme.ink)
+            .lineLimit(1).fixedSize()
+            .padding(.horizontal, 6)
+            .frame(height: 15)
+            .overlay(OutlineBox(rounded: true))
     }
 }
 

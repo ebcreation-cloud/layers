@@ -12,7 +12,10 @@ typealias PlatformColor = NSColor
 
 /// Narrow screen. A phone month cell is about 55pt wide, too narrow for text,
 /// so the layout differs rather than just shrinking.
-let isPhone = false
+///
+/// `-phone` forces it on, because the phone layout is the one that cannot be checked
+/// where the real calendar is: the simulator has no events in it.
+let isPhone = CommandLine.arguments.contains("-phone")
 
 extension PlatformColor {
     convenience init(rgb: UInt32) {
@@ -53,6 +56,36 @@ extension Color {
         Color(uiColor: UIColor { traits in
             UIColor(rgb: traits.userInterfaceStyle == .dark ? dark : light)
         })
+    }
+}
+#endif
+
+// MARK: - Paging by swipe
+
+#if os(macOS)
+extension View {
+    /// No-op on the Mac, where paging is the ‹ › buttons and the arrow keys. A trackpad
+    /// swipe there is a scroll, and claiming it would fight the month grid.
+    func pagingSwipe(_ step: @escaping (Int) -> Void) -> some View { self }
+}
+#else
+extension View {
+    /// A sideways drag pages: one month in the month view, one day in the day view.
+    /// `step` gets -1 for back and +1 for forward.
+    ///
+    /// Simultaneous, not exclusive: the day view scrolls vertically underneath, and a
+    /// plain `.gesture` swallows that scroll entirely.
+    func pagingSwipe(_ step: @escaping (Int) -> Void) -> some View {
+        simultaneousGesture(
+            DragGesture(minimumDistance: 24)
+                .onEnded { v in
+                    // Sideways only, and by a clear margin. Without the comparison a
+                    // diagonal flick while scrolling the hours changes the day under
+                    // the finger.
+                    let dx = v.translation.width, dy = v.translation.height
+                    guard abs(dx) > 56, abs(dx) > abs(dy) * 1.6 else { return }
+                    step(dx < 0 ? 1 : -1)
+                })
     }
 }
 #endif

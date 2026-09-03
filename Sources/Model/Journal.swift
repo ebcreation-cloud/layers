@@ -10,14 +10,18 @@ import Foundation
 struct Workout {
     var planned: String = ""
     var plannedTags: [String] = []
+    /// The record line, minus any tag written at its head. It can be empty on a day
+    /// that was recorded as nothing but "Rest", which is why it is not the evidence.
     var actual: String = ""
     var actualTags: [String] = []
+    /// Whether the record line was filled in at all. That, not the text, is the evidence.
+    var recorded = false
     var postureDone: [String] = []
     var stretchDone: [String] = []
     var recovery: Int?
     var noteTitle: String = ""
 
-    var didMain: Bool { !actual.isEmpty }
+    var didMain: Bool { recorded }
 
     /// The parser emits Korean tags; they are translated only for display.
     /// Month and day views share this table so neither drifts out of English.
@@ -26,13 +30,27 @@ struct Workout {
         "유산소": "Cardio", "자세교정": "Posture", "휴식": "Rest", "스트레칭": "Stretch", "운동": "Workout"]
     static func label(_ t: String) -> String { en[t] ?? t }
 
-    /// Three steps of one green. The solid fill is only for days with a record line.
-    enum Level { case done, soft, plan }
-    var chip: (level: Level, tags: [String])? {
-        if didMain { return (.done, actualTags.isEmpty ? ["운동"] : actualTags) }
-        if !stretchDone.isEmpty { return (.soft, ["스트레칭"]) }
-        if !postureDone.isEmpty { return (.soft, ["자세교정"]) }
-        if !plannedTags.isEmpty { return (.plan, plannedTags) }
+    /// What was actually done, or nothing at all.
+    ///
+    /// The calendar is a record of the past, not a statement of intent, so a plan is
+    /// not shown — and it especially must not be, because the journal template injects
+    /// a planned session into every daily note, which made it look like a workout
+    /// happened every day. The only evidence is the record line and the checkboxes.
+    ///
+    /// A rest day is not shown either. It used to be, in grey, on the argument that
+    /// being recorded made it worth a mark; but nothing was done, and a blank day says
+    /// that more plainly than a chip saying so.
+    var chip: [String]? {
+        if recorded {
+            var tags = actualTags
+            // "Rest" next to a session name is a remark about part of the day.
+            // A rest day names nothing else.
+            if tags.count > 1 { tags.removeAll { $0 == "휴식" } }
+            if tags == ["휴식"] { return nil }
+            return tags.isEmpty ? ["운동"] : tags
+        }
+        if !stretchDone.isEmpty { return ["스트레칭"] }
+        if !postureDone.isEmpty { return ["자세교정"] }
         return nil
     }
 }
@@ -63,7 +81,7 @@ enum Journal {
         ("상체밀기", #"상체[^.\n]{0,12}밀|밀기"#),
         ("코어", #"코어|core"#), ("필라테스", #"필라테스|pilates"#), ("골프", #"골프|golf"#),
         ("유산소", #"zone\s*2|러닝|달리기|인터벌|4x4|스테어마스터|stairmaster"#),
-        ("자세교정", #"직각어깨|자세\s*교정"#), ("휴식", #"휴식|rest\b"#),
+        ("자세교정", #"직각어깨|자세\s*교정"#), ("휴식", #"휴식|rest\b|쉬었|쉬는\s*날"#),
     ]
     private static let exercise: [(String, String)] = [
         ("하체A", #"squat|스쿼트|leg\s*press|레그\s*프레스|leg\s*extension|bulgarian|불가리안"#),
@@ -73,6 +91,49 @@ enum Journal {
         ("코어", #"플랭크|plank|데드버그|크런치"#),
         ("자세교정", #"prone\s*y|wall\s*slide|supine\s*db"#),
     ]
+
+    /// What may be written at the head of a record line, e.g. "- 기록: Leg B, ...".
+    /// Guessing from exercise names is only ever a guess: 25 Aug was a Lower B session
+    /// logged as "bulgarian split squat", which reads as Lower A and was tagged as one.
+    /// A tag written by hand is not a guess, so it wins outright.
+    ///
+    /// Bare "A" and "B" are allowed because that is how the sessions are named in the
+    /// journal. They are safe only because a tag must end at a non-letter: "bulgarian"
+    /// does not start with the tag B.
+    private static let leading: [(String, String)] = [
+        ("하체A", #"하체\s*a|leg\s*a|lower\s*a|a"#),
+        ("하체B", #"하체\s*b|leg\s*b|lower\s*b|b"#),
+        ("상체당기기", #"상체\s*당기기?|upper\s*pull|pull\s*day|당기기"#),
+        ("상체밀기", #"상체\s*밀기?|upper\s*push|push\s*day|밀기"#),
+        ("코어", #"코어|core"#), ("필라테스", #"필라테스|pilates"#),
+        ("골프", #"골프|golf"#), ("유산소", #"유산소|cardio"#),
+        ("자세교정", #"자세\s*교정|posture|직각어깨"#),
+        ("스트레칭", #"스트레칭|stretch"#),
+        ("휴식", #"휴식|rest|쉼"#),
+    ]
+
+    /// Reads the tags written at the head of a record line and returns them with the
+    /// rest of the line. It stops at the first word that is not a tag, so
+    /// "Leg B, bulgarian split squat 8kg" tags Lower B and keeps the note whole.
+    static func leadingTags(_ text: String) -> (tags: [String], rest: String) {
+        var rest = text, tags: [String] = []
+        outer: while !rest.isEmpty {
+            for (name, pat) in leading {
+                // A tag ends at a non-letter, or "rest" would swallow "restaurant".
+                guard let r = rest.range(of: "^(?:\(pat))(?![\\p{L}\\p{N}])",
+                                         options: [.regularExpression, .caseInsensitive])
+                else { continue }
+                if !tags.contains(name) { tags.append(name) }
+                // Whatever sits between two tags is punctuation, not the note.
+                rest = String(rest[r.upperBound...])
+                    .replacingOccurrences(of: #"^\s*[,/·+&.:;—–-]?\s*"#, with: "",
+                                          options: .regularExpression)
+                continue outer
+            }
+            break
+        }
+        return tags.isEmpty ? ([], text) : (tags, rest)
+    }
 
     private static func has(_ text: String, _ pattern: String) -> Bool {
         text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
@@ -140,10 +201,19 @@ enum Journal {
         if let sec = firstMatch(body, #"^##\s*\*{0,2}운동[^\n]*\n(.*?)(?=^##\s|\Z)"#) {
             w.planned = firstMatch(sec, #"오늘 세션:[ \t]*(.*)"#, dotAll: false).map(stripMD) ?? ""
             // \s* after the colon would swallow newlines and capture the next heading
-            w.actual = firstMatch(sec, #"^[ \t]*-[ \t]*기록[ \t]*:[ \t]*(.*(?:\n(?![ \t]*(?:[-*>#]|$)).*)*)"#, dotAll: false).map(stripMD) ?? ""
+            let record = firstMatch(sec, #"^[ \t]*-[ \t]*기록[ \t]*:[ \t]*(.*(?:\n(?![ \t]*(?:[-*>#]|$)).*)*)"#, dotAll: false).map(stripMD) ?? ""
+            w.recorded = !record.isEmpty
+            let (written, rest) = leadingTags(record)
+            w.actual = stripMD(rest)
             w.plannedTags = classify(w.planned)
-            let at = classify(w.actual)
-            w.actualTags = at.isEmpty && !w.actual.isEmpty ? w.plannedTags : at
+            if !written.isEmpty {
+                w.actualTags = written
+            } else {
+                let at = classify(record)
+                // Nothing recognisable in the record, but it was written: the session
+                // that was planned is the best evidence left.
+                w.actualTags = at.isEmpty ? w.plannedTags : at
+            }
             if let r = firstMatch(sec, #"Recovery:\s*_*\s*(\d{1,3})\s*%"#, dotAll: false) { w.recovery = Int(r) }
             w.postureDone = checked(sub(sec, "자세 교정 강화"))
             w.stretchDone = checked(sub(sec, "스트레칭"))
@@ -163,7 +233,9 @@ enum Journal {
                 if !t.isEmpty { notes.append(JournalNote(label: "Done", text: t, time: nil)) }
             }
         }
-        return (w.planned.isEmpty && w.actual.isEmpty && w.postureDone.isEmpty && w.stretchDone.isEmpty ? nil : w, notes)
+        let bare = w.planned.isEmpty && w.actual.isEmpty && !w.recorded
+            && w.postureDone.isEmpty && w.stretchDone.isEmpty
+        return (bare ? nil : w, notes)
         #endif
     }
 

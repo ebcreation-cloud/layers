@@ -3,12 +3,17 @@ import SwiftUI
 /// One editor handles both creating and editing. Two separate screens drift apart.
 enum EditorTarget: Identifiable {
     case edit(Item)
+    /// Somewhere on this day. The editor picks the hour, because the New button and a
+    /// tapped month cell do not know one.
     case create(Date)
+    /// This exact moment, because a click on the time axis said so.
+    case createAt(Date)
 
     var id: String {
         switch self {
         case .edit(let i): return "edit-\(i.ekID)"
         case .create(let d): return "new-\(d.timeIntervalSince1970)"
+        case .createAt(let d): return "at-\(d.timeIntervalSince1970)"
         }
     }
     var item: Item? { if case .edit(let i) = self { return i }; return nil }
@@ -25,9 +30,14 @@ struct EventEditor: View {
     @State private var start: Date
     @State private var end: Date
     @State private var allDay: Bool
+    @State private var location: String
+    @State private var repeats: Repeat = .never
     @State private var calendarID: String
     @State private var error: String?
     @State private var confirmingDelete = false
+    /// How long the event lasts. Held apart from the two dates so that moving the start
+    /// carries the end with it; see `body`.
+    @State private var length: TimeInterval
 
     private var item: Item? { target.item }
     private var isNew: Bool { item == nil }
@@ -41,7 +51,9 @@ struct EventEditor: View {
             _start = State(initialValue: i.start)
             _end = State(initialValue: i.end)
             _allDay = State(initialValue: i.isAllDay)
+            _location = State(initialValue: i.location)
             _calendarID = State(initialValue: "")
+            _length = State(initialValue: max(0, i.end.timeIntervalSince(i.start)))
         case .create(let day):
             // Default to the next full hour on that day, lasting one hour
             let c = Calendar.current
@@ -53,11 +65,33 @@ struct EventEditor: View {
             _start = State(initialValue: base)
             _end = State(initialValue: base.addingTimeInterval(3600))
             _allDay = State(initialValue: false)
+            _location = State(initialValue: "")
             _calendarID = State(initialValue: "")
+            _length = State(initialValue: 3600)
+        case .createAt(let base):
+            // A click on the axis has already said when. Guessing an hour over the top
+            // of it is the one thing the gesture cannot have meant.
+            _title = State(initialValue: "")
+            _start = State(initialValue: base)
+            _end = State(initialValue: base.addingTimeInterval(3600))
+            _allDay = State(initialValue: false)
+            _location = State(initialValue: "")
+            _calendarID = State(initialValue: "")
+            _length = State(initialValue: 3600)
         }
     }
 
+    /// Moving an event to another day means changing the start date. On its own that
+    /// leaves the end behind on the old day, so the save fails with "End is before
+    /// start" and the event never moves. The end follows the start and keeps the length.
     var body: some View {
+        form
+            .onAppear { if isNew { calendarID = defaultCalendarID() } }
+            .onChange(of: start) { _, d in end = d.addingTimeInterval(length) }
+            .onChange(of: end) { _, d in if d > start { length = d.timeIntervalSince(start) } }
+    }
+
+    @ViewBuilder private var form: some View {
         #if os(macOS)
         VStack(alignment: .leading, spacing: 14) {
             fields
@@ -73,7 +107,6 @@ struct EventEditor: View {
         .padding(20)
         .frame(width: 470)
         .background(Theme.surface)
-        .onAppear { if isNew { calendarID = defaultCalendarID() } }
         #else
         // A fixed-width sheet is cut off on a phone. Use a navigation sheet and move
         // Save and Cancel into the toolbar.
@@ -98,7 +131,6 @@ struct EventEditor: View {
                 }
             }
         }
-        .onAppear { if isNew { calendarID = defaultCalendarID() } }
         #endif
     }
 
@@ -112,9 +144,9 @@ struct EventEditor: View {
                 if confirmingDelete { remove(i) } else { confirmingDelete = true }
             }
             .buttonStyle(.plain).font(.ui(12.5))
-            .foregroundStyle(Theme.due)
+            .foregroundStyle(Theme.accent)
             .padding(.horizontal, 9).padding(.vertical, 5)
-            .hoverable(tint: Theme.due)
+            .hoverable(tint: Theme.accent)
         }
     }
 
@@ -128,7 +160,17 @@ struct EventEditor: View {
             .clipShape(RoundedRectangle(cornerRadius: 7))
             .disabled(!editable)
 
-        if isNew { calendarPicker }
+        if isNew {
+            let choosers = Group { calendarPicker; repeatPicker }
+            if isPhone { VStack(alignment: .leading, spacing: 12) { choosers } }
+            else { HStack(alignment: .top, spacing: 12) { choosers } }
+        } else if let r = item?.recurrence {
+            // The editor saves one occurrence. Say so, rather than let someone think
+            // they have just moved a weekly meeting for good.
+            Text("Repeats \(r) · changes apply to this occurrence only")
+                .font(.ui(11.5)).foregroundStyle(Theme.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
 
         Toggle("All day", isOn: $allDay).font(.ui(12.5)).disabled(!editable)
 
@@ -151,10 +193,10 @@ struct EventEditor: View {
             HStack(spacing: 12) { pickers }
         }
 
-        if let i = item, i.meetURL != nil || !i.location.isEmpty { location(i) }
+        locationField
 
         if let error {
-            Text(error).font(.ui(12)).foregroundStyle(Theme.due)
+            Text(error).font(.ui(12)).foregroundStyle(Theme.accent)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -163,17 +205,17 @@ struct EventEditor: View {
     @ViewBuilder private var header: some View {
         HStack(spacing: 8) {
             if let i = item {
-                Circle().fill(i.source.color).frame(width: 10, height: 10)
+                TimeChip(text: i.source.label.uppercased(), source: i.source, size: 8.5)
                 if let link = i.sourceLink {
                     Button { openExternal(link) } label: {
                         HStack(spacing: 4) {
                             Text(i.account.isEmpty ? i.calendar : i.account)
                             Image(systemName: "arrow.up.right.square").font(.system(size: 10))
                         }
-                        .font(.ui(12)).foregroundStyle(i.source.color)
+                        .font(.ui(12)).foregroundStyle(Theme.inkDim)
                         .padding(.horizontal, 6).padding(.vertical, 3)
                     }
-                    .buttonStyle(.plain).hoverable(radius: 5, tint: i.source.color)
+                    .buttonStyle(.plain).hoverable(radius: 5)
                     .help("Open this account's calendar on this date")
                 } else {
                     Text(i.calendar).font(.ui(12)).foregroundStyle(Theme.inkDim)
@@ -186,7 +228,7 @@ struct EventEditor: View {
             }
             Spacer()
             if let i = item, !i.writable {
-                Text("Read-only").font(.ui(11)).foregroundStyle(Theme.due)
+                Text("Read-only").font(.ui(11)).foregroundStyle(Theme.accent)
             }
         }
     }
@@ -202,9 +244,42 @@ struct EventEditor: View {
         }
     }
 
-    private func location(_ i: Item) -> some View {
+    private var repeatPicker: some View {
+        field("Repeat") {
+            Picker("", selection: $repeats) {
+                ForEach(Repeat.allCases) { r in Text(r.label).tag(r) }
+            }
+            .labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Editable, and still a link. The link is what makes an address worth having — Maps
+    /// for a place, the call for a meeting — but the field could only ever be read, so
+    /// an event created here could never be given one at all.
+    @ViewBuilder private var locationField: some View {
+        let has = !(item?.location.isEmpty ?? true) || item?.meetURL != nil
+        if editable || has {
+            field("Location") {
+                VStack(alignment: .leading, spacing: 7) {
+                    if editable {
+                        TextField("Address, room or meeting link", text: $location)
+                            .textFieldStyle(.plain).font(.ui(12.5))
+                            .padding(.horizontal, 10).padding(.vertical, 7)
+                            .background(Theme.sunk)
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                    }
+                    if let i = item { link(i) }
+                }
+            }
+        }
+    }
+
+    /// The link is made from what is saved, not from what is being typed: a half-typed
+    /// address is not somewhere to send anyone.
+    @ViewBuilder private func link(_ i: Item) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("LOCATION").font(.mono(9.5)).tracking(0.8).foregroundStyle(Theme.inkFaint)
+            // The Maps button prints the address itself, so a read-only event needs no
+            // separate line for it; it would only say the same thing twice.
             if let meet = i.meetURL {
                 Button { openExternal(meet) } label: {
                     HStack(spacing: 6) {
@@ -212,13 +287,13 @@ struct EventEditor: View {
                         Text("Join").font(.ui(12.5, .medium))
                         Text(meet.host ?? "").font(.ui(11)).foregroundStyle(Theme.inkDim)
                     }
-                    .foregroundStyle(Theme.today)
+                    .foregroundStyle(Theme.ink)
                     .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(Theme.today.opacity(0.12))
+                    .background(Theme.ink.opacity(0.09))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
-                .buttonStyle(.plain).hoverable(tint: Theme.today)
-            } else if !i.location.isEmpty {
+                .buttonStyle(.plain).hoverable()
+            } else if !i.location.isEmpty, i.location == location {
                 Button {
                     let q = i.location.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
                     if let u = URL(string: "https://maps.apple.com/?q=\(q)") { openExternal(u) }
@@ -254,10 +329,13 @@ struct EventEditor: View {
         guard end > start else { error = "End is before start."; return }
         let name = title.trimmingCharacters(in: .whitespaces)
         do {
+            let place = location.trimmingCharacters(in: .whitespaces)
             if let i = item {
-                try data.save(i, title: name, start: start, end: end, allDay: allDay)
+                try data.save(i, title: name, start: start, end: end, allDay: allDay,
+                              location: place)
             } else {
-                try data.create(title: name, start: start, end: end, allDay: allDay, calendarID: calendarID)
+                try data.create(title: name, start: start, end: end, allDay: allDay,
+                                location: place, repeats: repeats, calendarID: calendarID)
                 lastCalendarID = calendarID
             }
             onDone(); dismiss()

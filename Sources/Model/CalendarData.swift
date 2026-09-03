@@ -16,6 +16,9 @@ struct Item: Identifiable {
     var notes: String = ""
     var url: URL?
     var account: String = ""       // account this event lives in, used for the web link
+    /// Set when the event carries a recurrence rule, so the editor can say what it is
+    /// editing one occurrence of. A label, not the rule: nothing here rewrites a series.
+    var recurrence: String?
 
     /// Video-call link. Meet, Zoom and Teams links turn up in the URL field, the
     /// location field or the notes, so all three are searched.
@@ -55,6 +58,58 @@ struct Item: Identifiable {
     var spansDays: Bool { isAllDay || !Calendar.current.isDate(start, inSameDayAs: end) }
 }
 
+/// The repeats offered when creating an event.
+///
+/// Deliberately the common few. EventKit can express far more, and an editor that saves
+/// a change to one occurrence has no business writing a rule it cannot show afterwards.
+enum Repeat: String, CaseIterable, Identifiable {
+    case never, daily, weekdays, weekly, biweekly, monthly, yearly
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .never:    return "Does not repeat"
+        case .daily:    return "Every day"
+        case .weekdays: return "Every weekday"
+        case .weekly:   return "Every week"
+        case .biweekly: return "Every 2 weeks"
+        case .monthly:  return "Every month"
+        case .yearly:   return "Every year"
+        }
+    }
+
+    var rule: EKRecurrenceRule? {
+        switch self {
+        case .never:    return nil
+        case .daily:    return EKRecurrenceRule(recurrenceWith: .daily, interval: 1, end: nil)
+        case .weekly:   return EKRecurrenceRule(recurrenceWith: .weekly, interval: 1, end: nil)
+        case .biweekly: return EKRecurrenceRule(recurrenceWith: .weekly, interval: 2, end: nil)
+        case .monthly:  return EKRecurrenceRule(recurrenceWith: .monthly, interval: 1, end: nil)
+        case .yearly:   return EKRecurrenceRule(recurrenceWith: .yearly, interval: 1, end: nil)
+        case .weekdays:
+            // Monday is 2 and Friday is 6; EKWeekday counts from Sunday.
+            let days = (2...6).compactMap { EKWeekday(rawValue: $0) }.map(EKRecurrenceDayOfWeek.init)
+            return EKRecurrenceRule(recurrenceWith: .weekly, interval: 1, daysOfTheWeek: days,
+                                    daysOfTheMonth: nil, monthsOfTheYear: nil, weeksOfTheYear: nil,
+                                    daysOfTheYear: nil, setPositions: nil, end: nil)
+        }
+    }
+
+    /// Names a rule already on an event. Only the shape of it — an event repeating on
+    /// three named weekdays still reads as "Weekly", which is what the editor needs to
+    /// say and all it is entitled to claim.
+    static func name(_ r: EKRecurrenceRule) -> String {
+        let n = r.interval
+        switch r.frequency {
+        case .daily:   return n == 1 ? "daily" : "every \(n) days"
+        case .weekly:  return n == 1 ? "weekly" : "every \(n) weeks"
+        case .monthly: return n == 1 ? "monthly" : "every \(n) months"
+        case .yearly:  return n == 1 ? "yearly" : "every \(n) years"
+        @unknown default: return "on a schedule"
+        }
+    }
+}
+
 struct Note: Identifiable {
     let id = UUID()
     var label: String       // Pinboard / Done / Due
@@ -76,6 +131,11 @@ struct CalendarChoice: Identifiable, Hashable {
 
 @MainActor
 final class CalendarData: ObservableObject {
+    /// One store for the whole app. The window is no longer the only thing reading the
+    /// calendar — the menu bar keeps reading it after the window has closed — and two
+    /// `EKEventStore`s would mean two permission prompts for one app.
+    static let shared = CalendarData()
+
     @Published var items: [Item] = []
     @Published var notes: [Date: [Note]] = [:]
     @Published var workouts: [Date: Workout] = [:]
@@ -93,6 +153,37 @@ final class CalendarData: ObservableObject {
     private let noteLists = Config.noteLists
 
     func day(_ d: Date) -> Date { cal.startOfDay(for: d) }
+
+    /// Reads a window and turns it into items. Public holidays arrive from four
+    /// subscribed calendars, so the same day shows up three times over.
+    private func read(from: Date, to: Date) -> [Item] {
+        let raw = store.events(matching: store.predicateForEvents(withStart: from, end: to, calendars: nil))
+        var seen = Set<String>()
+        var list: [Item] = []
+        for e in raw {
+            let key = "\(day(e.startDate).timeIntervalSince1970)|\(e.isAllDay)|\(Self.norm(e.title ?? ""))"
+            if seen.contains(key) { continue }
+            seen.insert(key)
+            list.append(Item(title: (e.title ?? "").trimmingCharacters(in: .whitespaces),
+                             start: e.startDate, end: e.endDate, isAllDay: e.isAllDay,
+                             source: Self.group(e.calendar), calendar: e.calendar.title,
+                             writable: e.calendar.allowsContentModifications,
+                             ekID: e.eventIdentifier ?? "",
+                             location: e.location ?? "", notes: e.notes ?? "", url: e.url,
+                             account: Self.account(e.calendar),
+                             recurrence: e.recurrenceRules?.first.map(Repeat.name)))
+        }
+        return Self.merge(list)
+    }
+
+    /// The coming week, read on its own account. What alerts are built from must not be
+    /// what is on screen: `items` follows the month you are looking at, so alerts taken
+    /// from it were cancelled outright the moment you paged forward to check something.
+    func upcoming(days: Int) -> [Item] {
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return [] }
+        let now = Date()
+        return read(from: now, to: cal.date(byAdding: .day, value: days, to: now)!)
+    }
 
     func load(from: Date, to: Date) async {
         // Do not re-ask when access is already granted; requesting unconditionally
@@ -120,25 +211,7 @@ final class CalendarData: ObservableObject {
                                   source: Self.group($0), account: Self.account($0)) }
             .sorted { $0.source.rawValue == $1.source.rawValue ? $0.title < $1.title
                                                               : $0.source.rawValue < $1.source.rawValue }
-        let raw = store.events(matching: store.predicateForEvents(withStart: from, end: to, calendars: nil))
-
-        // Public holidays arrive from four subscribed calendars, so the same day
-        // shows up three times over
-        var seen = Set<String>()
-        var list: [Item] = []
-        for e in raw {
-            let key = "\(day(e.startDate).timeIntervalSince1970)|\(e.isAllDay)|\(Self.norm(e.title ?? ""))"
-            if seen.contains(key) { continue }
-            seen.insert(key)
-            list.append(Item(title: (e.title ?? "").trimmingCharacters(in: .whitespaces),
-                             start: e.startDate, end: e.endDate, isAllDay: e.isAllDay,
-                             source: Self.group(e.calendar), calendar: e.calendar.title,
-                             writable: e.calendar.allowsContentModifications,
-                             ekID: e.eventIdentifier ?? "",
-                             location: e.location ?? "", notes: e.notes ?? "", url: e.url,
-                             account: Self.account(e.calendar)))
-        }
-        items = Self.merge(list)
+        items = read(from: from, to: to)
         status = "\(items.count) events · \(cals.count) calendars"
 
         if remOK { await loadReminders() }
@@ -161,15 +234,13 @@ final class CalendarData: ObservableObject {
         for i in items { per[i.source.rawValue, default: 0] += 1 }
         let merged = items.filter { !$0.alsoIn.isEmpty }.map { "\($0.title) +\($0.alsoIn.count)" }
         let spans = items.filter(\.spansDays).map { "\(Fmt.hm($0.start)) \($0.title)" }
-        let chips = workouts.values.compactMap { $0.chip?.level }
+        let recorded = workouts.values.filter { $0.chip != nil }.count
         let out: [String: Any] = [
             "calendars": calCount, "remindersAccess": remOK,
             "items": items.count, "bySource": per,
             "merged": merged, "spanning": spans.count,
             "workoutDays": workouts.count,
-            "workoutDone": chips.filter { $0 == .done }.count,
-            "workoutSoft": chips.filter { $0 == .soft }.count,
-            "workoutPlan": chips.filter { $0 == .plan }.count,
+            "workoutRecorded": recorded,
             "noteDays": notes.count, "journalNoteDays": journalNotes.count,
             "withLocation": items.filter { !$0.location.isEmpty }.count,
             "withURL": items.filter { $0.url != nil }.count,
@@ -287,7 +358,8 @@ final class CalendarData: ObservableObject {
         }
     }
 
-    func create(title: String, start: Date, end: Date, allDay: Bool, calendarID: String) throws {
+    func create(title: String, start: Date, end: Date, allDay: Bool,
+                location: String, repeats: Repeat, calendarID: String) throws {
         guard let c = store.calendar(withIdentifier: calendarID), c.allowsContentModifications
         else { throw WriteError.noCalendar }
         let e = EKEvent(eventStore: store)
@@ -296,18 +368,25 @@ final class CalendarData: ObservableObject {
         e.isAllDay = allDay
         e.startDate = start
         e.endDate = end
-        try store.save(e, span: .thisEvent, commit: true)
+        e.location = location.isEmpty ? nil : location
+        if let r = repeats.rule { e.addRecurrenceRule(r) }
+        // A new series is written whole. `.thisEvent` on an event that carries a rule
+        // saves the first occurrence and leaves the rest unwritten.
+        try store.save(e, span: repeats == .never ? .thisEvent : .futureEvents, commit: true)
     }
 
-    func save(_ item: Item, title: String, start: Date, end: Date, allDay: Bool) throws {
+    func save(_ item: Item, title: String, start: Date, end: Date, allDay: Bool,
+              location: String) throws {
         guard item.writable else { throw WriteError.readOnly }
         guard let e = store.event(withIdentifier: item.ekID) else { throw WriteError.notFound }
         e.title = title
         e.isAllDay = allDay
         e.startDate = start
         e.endDate = end
+        e.location = location.isEmpty ? nil : location
         // Recurring events change only this occurrence; touching later ones is
-        // a much bigger accident to recover from.
+        // a much bigger accident to recover from. The repeat itself is therefore not
+        // editable here — it belongs to the series, not to the day you opened.
         try store.save(e, span: .thisEvent, commit: true)
     }
 

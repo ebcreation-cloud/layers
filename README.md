@@ -233,8 +233,15 @@ Sources/
     Journal.swift          Obsidian daily-note parsing (macOS only)
     Notifier.swift         Local notifications with meeting links
   Views/
-    MonthView.swift        Week rows and the bars that cross them
-    DayView.swift          Shared time axis for events and notes
-    EventEditor.swift      Create, edit, delete
+    MonthView.swift    Week rows and the bars that cross them
+    DayView.swift      Shared time axis for events and notes
+    EventEditor.swift  Create, edit, delete
+    AlertPanel.swift   The alert window the Mac raises, and its card
+    MenuBar.swift      Status item, next-event countdown, and staying resident
 Icon/render.swift          Draws the app icon at every size
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE). `Config.swift` holds one person's account mapping and
+journal vocabulary; nothing else in the source is specific to that setup.

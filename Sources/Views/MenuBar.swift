@@ -123,26 +123,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // a beat of its own the alert queue would stay whatever the calendar looked like
         // when it was last opened, and an event added on the phone this afternoon would
         // never raise anything.
+        //
+        // Rebuilding the alerts is not done here. It hangs off the load itself, in
+        // `LayersApp.init`, so that every way of asking the calendar to be read again —
+        // this beat, a refresh, a sync landing — ends in the same place, and so that
+        // paging, which asks for a window already read, ends nowhere at all.
+        //
+        // `EKEventStoreChanged` is watched by `CalendarData`, which is what a changed
+        // calendar means. The journal is a folder and sends nothing, so a workout
+        // written in Obsidian at lunchtime still needs this beat to be noticed.
         let t = Timer(timeInterval: 600, repeats: true) { _ in
-            Task { @MainActor in Self.refresh() }
+            Task { @MainActor in await CalendarData.shared.refresh() }
         }
         RunLoop.main.add(t, forMode: .common)
         refresher = t
-
-        // EventKit says when something changed, which beats waiting out the ten minutes.
-        NotificationCenter.default.addObserver(
-            forName: .EKEventStoreChanged, object: nil, queue: .main) { _ in
-                Task { @MainActor in Self.refresh() }
-            }
-    }
-
-    @MainActor static func refresh() {
-        let up = CalendarData.shared.upcoming(days: 7)
-        guard !up.isEmpty else { return }
-        // -noNotify has to hold here too, or a second copy run for testing would clear
-        // the real one's pending alerts out from under it.
-        if !CommandLine.arguments.contains("-noNotify") { Notifier.shared.schedule(up) }
-        MenuBar.shared.update(up)
     }
 
     /// Clicking the Dock icon with no window open should bring the calendar back.

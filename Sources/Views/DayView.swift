@@ -45,10 +45,7 @@ struct DayView: View {
     /// stand beside the notes rather than half covering them.
     private var bandMax: CGFloat { isPhone ? 92 : 176 }
 
-    private var spanning: [Item] {
-        data.items.filter { data.visible($0) && $0.spansDays
-            && data.day($0.start) <= data.day(day) && data.day(day) <= data.day($0.end) }
-    }
+    private var spanning: [Item] { data.spanning(on: day) }
 
     var body: some View {
         let w = data.workouts[cal.startOfDay(for: day)]
@@ -144,6 +141,12 @@ struct DayView: View {
                 }
                 .padding(.horizontal, 10)
             }
+            #if !os(macOS)
+            // The axis is the only scroller here, so it is where the phone's pull
+            // belongs. The all-day band above it scrolls only when it overflows, and a
+            // pull there would be a pull on the workout card.
+            .refreshable { await data.refresh() }
+            #endif
         }
         .background(Theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 12))

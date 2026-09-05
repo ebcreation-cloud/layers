@@ -24,10 +24,27 @@ enum Config {
     static let noteLists: Set<String> = ["Pinboard"]
 
     /// Obsidian vault holding the daily journal, or nil to skip journal parsing.
-    /// macOS only: on iOS the vault sits in another app's iCloud container.
+    /// macOS only: iOS gives no path into another app's iCloud container, so the phone
+    /// asks for the folder instead. See `Vault`.
     static var vaultPath: String? {
         "Library/Mobile Documents/iCloud~md~obsidian/Documents/Amethyst"
     }
+
+    /// The folder inside the vault holding the daily notes.
+    static let journalFolder = "2. Daily Journal"
+
+    /// Where the Mac publishes what the journal recorded, so the phone can show it.
+    ///
+    /// The journal is a folder inside another app's iCloud container, which iOS gives
+    /// no path to, so the record travels the way everything else in this app already
+    /// travels: as a calendar the OS syncs. One all-day event per recorded day, in a
+    /// calendar of its own, which is what keeps it out of the grid — see
+    /// `CalendarData.isWorkoutFeed`. Create the calendar in Google Calendar first;
+    /// nothing else may write to it, because the Mac deletes what it does not recognise.
+    ///
+    /// Set to nil to turn the whole thing off.
+    static let workoutFeed: WorkoutFeed? =
+        WorkoutFeed(account: "eunbi.umwelt@gmail.com", calendar: "Layers Workouts")
 
     /// Section headings inside a daily note.
     static let workoutHeading = "운동"          // "workout"
@@ -47,6 +64,14 @@ enum Config {
     static let genericWords: Set<String> = ["payment", "birthday", "생일", "송금", "lunch",
         "dinner", "breakfast", "coffee", "call", "meeting", "class", "holiday",
         "observed", "day", "off", "with", "and", "the", "for"]
+}
+
+struct WorkoutFeed {
+    /// The account holding it. Matched against the calendar's source, so a calendar of
+    /// the same name in another account is not mistaken for this one.
+    let account: String
+    /// The calendar's own name, as it reads in Google Calendar.
+    let calendar: String
 }
 
 struct CalendarRule {

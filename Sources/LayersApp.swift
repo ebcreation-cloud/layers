@@ -1,10 +1,37 @@
 import SwiftUI
+#if !os(macOS)
+import UniformTypeIdentifiers
+#endif
 
 @main
 struct LayersApp: App {
     #if os(macOS)
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     #endif
+
+    /// The alerts are rebuilt whenever the calendar was actually read, wherever the
+    /// reading was asked for — a launch, a refresh, the ten-minute beat, a sync landing.
+    /// Hanging it off the load rather than off the view is what took it off the page
+    /// turn: paging asks for a window that has already been read, so nothing fires.
+    init() {
+        CalendarData.shared.onLoad = {
+            Task {
+                // Alerts come from their own read of the coming week, not from `items`.
+                // `items` holds whichever months have been read, and scheduling from it
+                // wiped every pending alert the moment you paged somewhere else.
+                let up = CalendarData.shared.upcoming(days: 7)
+                guard !up.isEmpty else { return }
+                #if os(macOS)
+                MenuBar.shared.update(up)
+                #endif
+                // -noNotify has to hold here, or a second copy run for testing would
+                // clear the real one's pending alerts out from under it.
+                guard !CommandLine.arguments.contains("-noNotify") else { return }
+                await Notifier.shared.start()
+                Notifier.shared.schedule(up)
+            }
+        }
+    }
 
     var body: some Scene {
         #if os(macOS)
@@ -35,6 +62,13 @@ struct RootView: View {
         CommandLine.arguments.contains("-startInDay") ? .day : .month
     @State private var editor: EditorTarget?
     @State private var showFilters = false
+    #if !os(macOS)
+    /// The phone suspends the app rather than closing it, so a calendar left open
+    /// yesterday shows yesterday until something asks it to look again.
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var vault = Vault.shared
+    @State private var picking = false
+    #endif
     /// Which way the last step went, so the new page slides in from that side.
     @State private var dir = 1
     private let cal = Calendar.current
@@ -50,6 +84,12 @@ struct RootView: View {
     var body: some View {
         VStack(spacing: isPhone ? 8 : 12) {
             header
+            // A refresh that finds nothing new is indistinguishable from one that never
+            // ran, so it says it heard the ask. A hairline rather than a spinner: the
+            // page is hairlines, and a spinner would be the loudest thing on it.
+            Rectangle().fill(Theme.inkFaint)
+                .frame(height: 1.5).opacity(data.refreshing ? 1 : 0)
+                .animation(.easeInOut(duration: 0.18), value: data.refreshing)
             if !isPhone { rail }
             Group {
                 if mode == .month {
@@ -85,9 +125,18 @@ struct RootView: View {
         #endif
         .sheet(isPresented: $showFilters) { filterSheet }
         .sheet(item: $editor) { t in
-            EventEditor(data: data, target: t) { Task { await reload() } }
+            // An edit changed the store, so this is one of the few asks that must
+            // actually re-read rather than settle for what is already loaded.
+            EventEditor(data: data, target: t) { Task { await data.refresh(pullSources: false) } }
         }
         .task { await reload() }
+        #if !os(macOS)
+        // Coming back to the app is the phone's version of the Mac's ten-minute beat.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { await data.refresh() }
+        }
+        #endif
         #if os(macOS)
         .onAppear { MenuBar.shared.reopen = { openWindow(id: "main") } }
         #endif
@@ -134,6 +183,9 @@ struct RootView: View {
                 iconButton("line.3.horizontal.decrease") { showFilters = true }
                 todayButton
             }
+            #if os(macOS)
+            refreshButton
+            #endif
             iconOrLabelNew
             Picker("", selection: $mode) {
                 Text("Month").tag(Mode.month)
@@ -146,6 +198,22 @@ struct RootView: View {
         }
         .foregroundStyle(Theme.ink)
     }
+
+    #if os(macOS)
+    /// The Mac's manual refresh. The phone has no button for this: it pulls the grid
+    /// down instead, which is where a hand already is.
+    private var refreshButton: some View {
+        Button { Task { await data.refresh() } } label: {
+            Image(systemName: "arrow.clockwise").font(.system(size: 12))
+                .foregroundStyle(Theme.inkDim)
+                .frame(width: 30, height: 30)
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain).hoverable(radius: 7)
+        .keyboardShortcut("r", modifiers: .command)
+        .help("Refresh")
+    }
+    #endif
 
     /// Works in both views: in the day view it opens today rather than only moving the
     /// month. A calendar glyph read as a view switch, so the word is spelled out.
@@ -214,12 +282,48 @@ struct RootView: View {
                 }
                 .buttonStyle(.plain)
             }
+            #if !os(macOS)
+            Divider().overlay(Theme.line).padding(.vertical, 4)
+            journalRow
+            #endif
             Spacer()
             Button("Done") { showFilters = false }.frame(maxWidth: .infinity)
         }
         .padding(20)
         .background(Theme.ground)
     }
+
+    #if !os(macOS)
+    /// The phone's one piece of setup. iOS gives no path into Obsidian's iCloud
+    /// container, but it will hand over a folder that is pointed at, so this is where
+    /// the pointing happens. Until it does, the workouts come from the calendar the Mac
+    /// publishes, which is why nothing here is required and nothing says it is.
+    @ViewBuilder private var journalRow: some View {
+        Text("JOURNAL").font(.mono(10)).tracking(1).foregroundStyle(Theme.inkFaint)
+        Button { picking = true } label: {
+            HStack(spacing: 10) {
+                Text(vault.label ?? "Choose the Obsidian vault")
+                    .font(.ui(12.5))
+                    .foregroundStyle(vault.label == nil ? Theme.inkDim : Theme.ink)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Image(systemName: "folder").font(.system(size: 12))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+        Text(vault.label == nil
+             ? "Workouts come from the calendar the Mac publishes."
+             : "Workouts are read from the journal itself.")
+            .font(.ui(10.5)).foregroundStyle(Theme.inkFaint)
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
+            guard case .success(let url) = result else { return }
+            vault.adopt(url)
+            Task { await data.refresh(pullSources: false) }
+        }
+    }
+    #endif
 
     private var rail: some View {
         HStack(spacing: 6) {
@@ -271,23 +375,31 @@ struct RootView: View {
         }
     }
 
-    /// Loads a margin either side of the visible month, because week rows overlap neighbours.
+    /// What the month on screen needs. A margin either side, because week rows overlap
+    /// their neighbours.
+    private func needed(_ d: Date) -> (Date, Date) {
+        let first = cal.date(from: cal.dateComponents([.year, .month], from: d))!
+        return (cal.date(byAdding: .day, value: -14, to: first)!,
+                cal.date(byAdding: .day, value: 45, to: first)!)
+    }
+
+    /// What is actually read when a read is needed: months either side of the one being
+    /// asked for. Reading seven months costs a little more than reading two, once, and
+    /// buys two or three page turns that cost nothing at all. `CalendarData` skips any
+    /// window it already covers, so paging inside this is a view change and no more.
+    private func around(_ d: Date) -> (Date, Date) {
+        let first = cal.date(from: cal.dateComponents([.year, .month], from: d))!
+        return (cal.date(byAdding: .day, value: -75, to: first)!,
+                cal.date(byAdding: .day, value: 135, to: first)!)
+    }
+
+    /// Asked on every page turn. It costs nothing while the month is inside what has
+    /// already been read, which is most turns.
     private func reload() async {
-        let first = cal.date(from: cal.dateComponents([.year, .month], from: cursor))!
-        await data.load(from: cal.date(byAdding: .day, value: -14, to: first)!,
-                        to: cal.date(byAdding: .day, value: 60, to: first)!)
-        // Ask for notification permission only once there is something to notify about.
-        if !data.items.isEmpty, !CommandLine.arguments.contains("-noNotify") {
-            await Notifier.shared.start()
-            // Alerts come from their own read of the coming week, not from `items`.
-            // `items` holds whichever month is on screen, and scheduling from it wiped
-            // every pending alert the moment you paged to another month.
-            let up = data.upcoming(days: 7)
-            Notifier.shared.schedule(up)
-            #if os(macOS)
-            MenuBar.shared.update(up)
-            #endif
-        }
+        let n = needed(cursor)
+        guard !data.covers(n.0, n.1) else { return }
+        let w = around(cursor)
+        await data.load(from: w.0, to: w.1)
     }
 }
 

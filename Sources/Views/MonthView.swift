@@ -49,6 +49,19 @@ struct MonthView: View {
             .background(Theme.line)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line, lineWidth: 1))
+            #if !os(macOS)
+            // The month is a grid, not a scroller, so `.refreshable` has nothing to
+            // attach to and the pull has to be read directly. Simultaneous and vertical
+            // only, mirroring the sideways paging gesture: the two cannot both fire,
+            // because each demands its own axis by a clear margin.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 30)
+                    .onEnded { v in
+                        let dx = v.translation.width, dy = v.translation.height
+                        guard dy > 90, dy > abs(dx) * 1.6 else { return }
+                        Task { await data.refresh() }
+                    })
+            #endif
         }
     }
 }
@@ -200,13 +213,23 @@ private struct DayCell: View {
             // in from transparent instead.
             HStack(spacing: 5) {
                 if let tags = w?.chip { WorkoutChip(tags: tags) }
+                #if os(macOS)
+                // A phone cell is about 55pt wide, which was not room enough for both
+                // this and the workout tag: the two used to compete for the same
+                // stretch of the life strip, and because the tag was the one asked to
+                // give way, the count was what ended up sitting where the tag should
+                // have read. The Mac cell has room for both.
                 let rest = notes.count - dues.count + jnotes.count
                 if rest > 0 {
                     HStack(spacing: 3) {
                         Rectangle().fill(Theme.inkDim).frame(width: 5, height: 5)
                         Text("\(rest)").font(.mono(10.5)).foregroundStyle(Theme.inkDim)
                     }
+                    // Belt and suspenders: even here, the record is what this feature
+                    // is for, so it is the count that gives way if space ever runs out.
+                    .layoutPriority(-1)
                 }
+                #endif
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -267,13 +290,19 @@ private struct PhoneEventRow: View {
 /// cell with no all-day event the workout would otherwise read as one; an event is a
 /// span and has ends, a record is a single fact and has none, so the silhouette says
 /// which is which without depending on where in the cell it sits.
+/// Nothing in a cell may claim a width of its own. The seven cells are equal because
+/// each of them can shrink to nothing, and a single `fixedSize` here was enough to make
+/// the day holding "Lower B · Stretching · yoga" wider than the six days beside it: the
+/// row has to honour a minimum it cannot shrink past, and takes the space from its
+/// neighbours. It was invisible while tags came from a fixed vocabulary and every one of
+/// them was short. Tags are written by hand now, so the chip truncates instead.
 private struct WorkoutChip: View {
     let tags: [String]
     var body: some View {
         Text(tags.map(Workout.label).joined(separator: " · "))
             .font(.mono(evFont - 1.5)).tracking(0.5).textCase(.uppercase)
             .foregroundStyle(Theme.ink)
-            .lineLimit(1).fixedSize()
+            .lineLimit(1).truncationMode(.tail)
             .padding(.horizontal, 6)
             .frame(height: 15)
             .overlay(OutlineBox(rounded: true))
@@ -283,4 +312,6 @@ private struct WorkoutChip: View {
 enum Fmt {
     static let hmF: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f }()
     static func hm(_ d: Date) -> String { hmF.string(from: d) }
+    static let ymdF: DateFormatter = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f }()
+    static func ymd(_ d: Date) -> String { ymdF.string(from: d) }
 }
